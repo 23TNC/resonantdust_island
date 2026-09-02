@@ -16,6 +16,9 @@ publish = false
 # what keeps a future desktop build reachable from the same renderer code.
 wgpu = "30.0.1"
 bytemuck = { version = "1.25", features = ["derive"] }
+# Matrix/vector maths. Hand-rolling this is a reliable source of subtle
+# transposition bugs and is not a good use of the time.
+glam = "0.33"
 
 # --- Diagnostics ---
 log = "0.4"

@@ -9,8 +9,10 @@
 //! At this stage the crate contains only [`Renderer`], enough to prove the
 //! Rust → wasm → Web Worker → wgpu → `OffscreenCanvas` path end to end.
 
+mod camera;
 mod renderer;
 
+pub use camera::{CAMERA_PITCH_DEGREES, CAMERA_YAW_DEGREES};
 pub use renderer::{FrameStatus, HelloReport, Renderer, RendererError};
 
 /// Re-export of the `wgpu` we were built against.

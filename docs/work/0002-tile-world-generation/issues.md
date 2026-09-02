@@ -150,4 +150,70 @@ happen before there is a number showing it is needed.
 
 ## Issues actually encountered
 
-*(nothing yet — the work has not started)*
+---
+
+## 7. `OPEN` — `A2` cannot be finished in group A; the plan ordered it wrong
+
+**Symptom:** `A2` says to pick the camera pitch by rendering the same seed at
+30°, 45° and 60° and comparing. There is no terrain renderer until group `F`,
+so there is nothing to render and nothing to compare.
+
+**Cause:** a planning mistake, not a code one. The task was placed in group A
+because the *decision* is a convention, but its stated method depends on output
+that groups B–F produce.
+
+**What group A did instead:**
+
+- Fixed the **convention** — degrees above the horizontal ground plane — which
+  was the genuinely ambiguous part and needed settling before anything else
+  used the number.
+- Defined `CAMERA_PITCH_DEGREES` as a single constant with the trade-off table
+  in its doc comment, so changing it stays a one-line edit.
+- Set it provisionally to **30°** to match the Mad Island reference.
+
+**Resolution:** the committing choice moves to a new task after `F3`, when
+there is terrain to photograph. Tracked there rather than left implicit here.
+
+**Worth noting for future plans:** a task whose acceptance depends on later
+work does not belong in an early group, even when its subject matter does. The
+tell was that `A2` said "render" while group A produces no renderer.
+
+---
+
+## 8. `RESOLVED` — glam has two orthographic projections one suffix apart
+
+**Symptom:** not a failure — caught while writing the conventions down rather
+than after a scene rendered wrong.
+
+**Cause:** `Mat4::orthographic_rh` and `Mat4::orthographic_rh_gl` differ only in
+depth range. wgpu clip space is `0..1`; OpenGL's is `-1..1`. Picking the GL
+variant gives a scene that is clipped or z-fights, and the symptom points at
+the depth buffer rather than at the projection matrix.
+
+**Resolution:** verified empirically instead of trusting the naming, and pinned
+with three tests in `camera.rs` — near maps to 0 and far to 1 under
+`orthographic_rh`, the GL variant maps near to -1, and +Y is up in clip space.
+A glam upgrade that changed the convention would now fail the build rather than
+change the picture.
+
+---
+
+## 9. `RESOLVED` — back-face culling is not on by default
+
+**Symptom:** none yet; found by checking the vendored wgpu source while
+documenting winding order, rather than by hitting it.
+
+**Cause:** `FrontFace::Ccw` genuinely is wgpu's default, so it is tempting to
+assume `PrimitiveState::default()` gives sensible culling too. It does not —
+`cull_mode` is an `Option<Face>` and defaults to `None`, meaning **nothing is
+culled**.
+
+**Why it matters here:** the terrain mesher emits walls, and a wall wound the
+wrong way is invisible from the side it should be seen from. With culling off,
+it is instead visible from *both* sides — so the winding bug is hidden until
+culling is switched on later, at which point walls start disappearing and the
+cause looks like a mesher regression.
+
+**Resolution:** `F4` must set `cull_mode: Some(Face::Back)` explicitly, and
+should do so from the first version rather than adding it once terrain looks
+right. Recorded in `docs/architecture/coordinates.md`.

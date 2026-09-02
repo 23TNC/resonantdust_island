@@ -1,6 +1,6 @@
 # 0002 — Tile World Generation
 
-**Status:** `[ ]` not started
+**Status:** `[~]` in progress — group A complete
 **Depends on:** `0001-hello-world-entrypoint` (complete)
 **Goal:** Generate a deterministic, seeded tile world with terrain elevation and
 render it — replacing the hello triangle with something that is actually the
@@ -83,29 +83,40 @@ docs/architecture/
 
 ### A. Conventions, decided before any code
 
-- [ ] `A1` Write `docs/architecture/coordinates.md`: **X** right, **Y** up,
+- [x] `A1` Write `docs/architecture/coordinates.md`: **X** right, **Y** up,
       **Z** toward the viewer, right-handed. One tile = `1.0` world unit. A
       tile's origin is its **centre** at ground height, so a billboard placed
       at a tile's origin stands in the middle of it rather than on a corner.
       Record the wgpu NDC convention (Y up, Z in `0..1`, unlike OpenGL's
       `-1..1`) because it is a standard source of an inverted or clipped scene.
-- [ ] `A2` **Pin the camera pitch, and pick it from evidence rather than
-      taste.** This is the one decision here that art will be locked to.
+- [~] `A2` **Pin the camera pitch, and pick it from evidence rather than
+      taste.** *Convention fixed and constant defined; the committing choice
+      is blocked on there being terrain to look at — see `issues.md` §7.* This is the one decision here that art will be locked to.
       Define it as *degrees above the horizontal ground plane* — state the
       convention explicitly, since "30 degree pitch" is ambiguous between
       degrees-from-horizontal (side-on) and degrees-from-vertical (top-down).
       Render the same seed at ~30°, ~45° and ~60° and compare the screenshots
       before committing. Higher shows more ground; lower shows more cliff face
       and more of each billboard's front. Mad Island reads as roughly 30°.
-- [ ] `A3` **Heights are integer steps, not a continuous surface.** Each tile
+- [x] `A3` **Heights are integer steps, not a continuous surface.** Each tile
       is a flat quad at its own height with vertical walls between differing
       neighbours. This keeps tile identity crisp — a tile is one flat thing you
       can stand an object on — and matches the blocky reference look. A smooth
       interpolated surface would make "what height is this tile" ill-defined,
       which billboard placement in `0003` would then have to solve.
-- [ ] `A4` Add `glam` (0.33) to `[workspace.dependencies]` and to
+- [x] `A4` Add `glam` (0.33) to `[workspace.dependencies]` and to
       `island_core`. Hand-rolling matrix maths is not a good use of the time
       and is a reliable source of subtle transposition bugs.
+- [x] `A5` *(added)* Pin glam's projection convention with tests rather than a
+      comment. `orthographic_rh` vs `orthographic_rh_gl` differ only in depth
+      range and only by a suffix; the wrong one looks like a depth-buffer bug.
+      Verified empirically, not from memory.
+
+**Verified:** `cargo test -p island_core` 5/5 green — `orthographic_rh` maps
+near→0 and far→1 (wgpu's range), the GL variant maps near→-1, and +Y is up in
+clip space. Also checked against the vendored source that `FrontFace::Ccw` is
+wgpu's default but **`cull_mode` defaults to `None`**, so back-face culling has
+to be requested explicitly in `F4`.
 
 ### B. World data model — `island_core::world`
 
