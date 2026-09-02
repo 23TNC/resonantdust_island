@@ -1,0 +1,26 @@
+[package]
+name = "island_web"
+description = "Browser entrypoint: adapts an OffscreenCanvas and the worker message loop onto island_core."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+# cdylib is what wasm-bindgen consumes; rlib keeps the crate usable as a normal
+# dependency (and lets `cargo test` work on the host).
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+island_core.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+js-sys.workspace = true
+console_error_panic_hook.workspace = true
+console_log.workspace = true
+log.workspace = true
+
+# Only the features actually used. Every extra web-sys feature is more
+# generated code to compile and more bytes in the .wasm.
+[dependencies.web-sys]
+workspace = true
+features = ["OffscreenCanvas"]

@@ -1,6 +1,6 @@
 # 0001 — Hello World Entrypoint
 
-**Status:** `[~]` in progress — groups A and B complete
+**Status:** `[~]` in progress — groups A, B and C complete
 **Goal:** Stand up the smallest end-to-end slice of the real architecture: a
 Rust program compiled to WebAssembly, running inside a Web Worker, driving
 `wgpu` against a real GPU through WebGPU, drawing to an `OffscreenCanvas` on
@@ -128,25 +128,49 @@ the wgpu 30 API differences hit along the way.
 
 ### C. `island_web` — the wasm entrypoint
 
-- [ ] `C1` Create `crates/island_web` with `crate-type = ["cdylib", "rlib"]`.
+- [x] `C1` Create `crates/island_web` with `crate-type = ["cdylib", "rlib"]`.
       Dependencies: `island_core`, `wasm-bindgen`, `wasm-bindgen-futures`,
       `js-sys`, `web-sys` (features: `OffscreenCanvas`, `WorkerGlobalScope`,
       `WorkerNavigator`, `console`), `console_error_panic_hook`, `log`,
       `console_log`.
-- [ ] `C2` **Pin `wasm-bindgen` to `=0.2.127`.** The installed CLI is 0.2.127
+- [x] `C2` **Pin `wasm-bindgen` to `=0.2.127`.** The installed CLI is 0.2.127
       and the crate and CLI must agree exactly or `wasm-bindgen` aborts with a
       schema-version mismatch. Verify with `wasm-bindgen --version`.
-- [ ] `C3` Export `#[wasm_bindgen(start)]`-style init that installs
+- [x] `C3` Export `#[wasm_bindgen(start)]`-style init that installs
       `console_error_panic_hook` and `console_log`, so a Rust panic in the
       worker surfaces as a readable JS stack instead of `unreachable`.
-- [ ] `C4` Export `pub async fn start(canvas: web_sys::OffscreenCanvas) -> JsValue`
+- [x] `C4` Export `pub async fn start(canvas: web_sys::OffscreenCanvas) -> JsValue`
       — builds the `Renderer`, and returns the `HelloReport` fields as a plain
       JS object for the shell to display.
-- [ ] `C5` Export `pub fn frame(t: f32)` and `pub fn resize(w: u32, h: u32)`,
+- [x] `C5` Export `pub fn frame(t: f32)` and `pub fn resize(w: u32, h: u32)`,
       backed by a thread-local `RefCell<Option<Renderer>>`. (Wasm in a worker
       is single-threaded here, so `thread_local!` is the right storage — no
       `Mutex`, no `unsafe`.)
-- [ ] `C6` Log `"hello world from Rust"` plus the adapter info on startup.
+- [x] `C6` Log `"hello world from Rust"` plus the adapter info on startup.
+- [x] `C7` *(added)* `frames_presented()` export, so the smoke test in `G1` can
+      prove the loop is advancing rather than one frame having been drawn.
+- [x] `C8` *(added)* Check `navigator.gpu` before calling into wgpu, and fail
+      with a message naming the secure-context cause. wgpu's "no adapter" error
+      is accurate but does not say why, and an insecure context is the most
+      likely cause here — see `issues.md` §1.
+- [x] `C9` *(added)* `#![cfg(target_arch = "wasm32")]` on the crate, so
+      `cargo test --workspace` keeps working on the host. See `issues.md` §13.
+
+**Deviations from plan, both forced:**
+
+- `frame` takes an `f64` millisecond rAF timestamp rather than `f32` seconds.
+  Rust records the first timestamp as t=0, so the shell forwards rAF's value
+  verbatim and time semantics live in one place instead of two.
+- `start` returns a **plain JS object**, not a `#[wasm_bindgen]` struct. The
+  worker forwards it over `postMessage`, which structured-clones; a
+  wasm-bindgen struct is a wrapper around a pointer into wasm memory and does
+  not survive that. Consequence for group E: the generated `.d.ts` types it as
+  `Promise<any>`, so `worker.ts` must declare its own interface for the report.
+
+**Verified:** `cargo clippy --workspace -- -D warnings` clean on wasm32,
+`cargo test --workspace` green on the host, and — the real proof for `C2` — the
+`wasm-bindgen` CLI consumes the cdylib with no schema mismatch, emitting the
+five expected exports.
 
 ### D. Build pipeline
 

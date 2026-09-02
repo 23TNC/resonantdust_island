@@ -126,7 +126,11 @@ await init({ module_or_path: wasmUrl })
 ```
 This is deterministic and does not depend on the rewrite.
 
-**Status:** open until `E5` is done.
+**Status:** open until `E5` is done. **Premise confirmed (group C):** the
+generated glue does exactly this — `island_web.js` line ~1579 reads
+`module_or_path = new URL('island_web_bg.wasm', import.meta.url)` when called
+with no argument, and accepts an explicit URL otherwise. So the documented
+fallback is available and known to work.
 
 ---
 
@@ -312,3 +316,77 @@ with `error: invalid field accessor ...` and names the line.
 **Note:** `wgpu::naga` is re-exported but behind `#[cfg(all(not(wgpu_core),
 naga))]`, so it is not reliably reachable across both targets. Depending on
 `naga` directly avoids the cfg entirely.
+
+---
+
+## 12. `RESOLVED` — `OffscreenCanvas` has no `Into<SurfaceTarget>`
+
+**Symptom:** `island_web` failed to compile with six errors, all variations of
+`the trait bound OffscreenCanvas: Into<wgpu::SurfaceTarget<'static>> is not
+satisfied`, with the compiler unhelpfully suggesting `HasWindowHandle` impls.
+
+**Cause:** `SurfaceTarget` does have an `OffscreenCanvas` variant, but wgpu's
+only `From` impl for it is a blanket `impl<'a, T> From<T> for SurfaceTarget<'a>
+where T: DisplayAndWindowHandle` — i.e. raw window handles. A web canvas is not
+a window handle, so the variant has to be named explicitly.
+
+**Resolution:** construct `SurfaceTarget::OffscreenCanvas(canvas)` in
+`island_web`, which is the right place for it — building a platform-specific
+surface target is precisely the platform adapter's job, and `island_core` stays
+free of browser types.
+
+That requires wgpu types in `island_web`. Rather than declare wgpu as a second
+direct dependency (where a version skew between the two crates would surface as
+a baffling trait-mismatch error), `island_core` now does `pub use wgpu;` and
+`island_web` goes through `island_core::wgpu`. The shared version becomes
+structural rather than a convention two manifests have to keep agreeing on.
+
+---
+
+## 13. `RESOLVED` — `island_web` cannot compile natively, breaking `cargo test`
+
+**Symptom:** `cargo test --workspace` failed:
+
+```
+error[E0599]: no variant, associated function, or constant named
+`OffscreenCanvas` found for enum `SurfaceTarget<'window>`
+```
+
+**Cause:** the `OffscreenCanvas` variant is `#[cfg]`-gated to wasm targets, so
+`island_web` is inherently wasm-only. Nothing wrong with that — but the default
+`cargo test` and `cargo check` build for the host, so a wasm-only member makes
+both fail at the workspace root.
+
+**Resolution:** `#![cfg(target_arch = "wasm32")]` on the crate root, so
+`island_web` compiles to an empty crate off wasm. `cargo test --workspace` and
+`cargo check --workspace` now both pass on the host, and the wasm32 target is
+unaffected — verified by re-running `wasm-bindgen` afterwards and confirming all
+five exports survive.
+
+Everything worth unit-testing lives in `island_core`, which builds on both
+targets, so nothing is lost by making `island_web` inert on the host.
+
+---
+
+## 14. `RESOLVED` — the adapter report cannot be a `#[wasm_bindgen]` struct
+
+**Symptom:** not a failure — caught while designing `start`'s return type,
+before writing code that would have failed confusingly at runtime.
+
+**Cause:** the natural way to return structured data from Rust to JS is an
+exported `#[wasm_bindgen]` struct, which gives real TypeScript types. But the
+worker immediately forwards this report to the main thread via `postMessage`,
+which **structured-clones** its argument. A wasm-bindgen struct is a JS object
+wrapping a pointer into wasm linear memory: it is not structured-cloneable, and
+would either throw `DataCloneError` or arrive as something meaningless.
+
+**Resolution:** build a plain object with `js_sys::Object` and `Reflect::set`.
+
+**Cost, carried into group E:** the generated `.d.ts` types `start` as
+`Promise<any>`, so `worker.ts` must declare its own interface describing the
+report's shape. That interface and `report_to_js` are two places that have to
+agree by hand — worth a comment on both sides.
+
+**General rule for later work:** anything crossing a `postMessage` boundary
+must be structured-cloneable. This will come up again the moment game state is
+shared between the worker and the main thread.
