@@ -8,7 +8,9 @@
     // (WebWorker). One project, so both libs are loaded; skipLibCheck keeps
     // their overlapping globals from being an error.
     "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
-    "types": ["vite/client"],
+    // WebGPU is not in TypeScript's DOM lib yet; worker.ts reads adapter
+    // identity straight from the API, so it needs the official types.
+    "types": ["vite/client", "@webgpu/types"],
 
     "strict": true,
     "noUnusedLocals": true,

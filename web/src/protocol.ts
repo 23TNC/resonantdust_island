@@ -35,6 +35,32 @@ export interface GpuReport {
   height: number
 }
 
+/**
+ * Adapter identity read from the raw WebGPU API.
+ *
+ * Needed because wgpu cannot supply it. On the WebGPU backend wgpu maps
+ * `AdapterInfo.name` from `GPUAdapterInfo.description`, which Chrome leaves
+ * empty for fingerprinting reasons — so the Rust-side report has a blank
+ * adapter name and a `deviceType` of "Other" no matter what hardware is
+ * present. `vendor` and `architecture` *are* exposed, so the shell reads them
+ * directly and reports them alongside.
+ *
+ * This is what makes "is it a real GPU?" answerable rather than a guess.
+ */
+export interface WebGpuIdentity {
+  /** e.g. "nvidia", "amd", "intel", "apple". Empty if withheld. */
+  vendor: string
+  /** e.g. "turing", "rdna-3". Empty if withheld. */
+  architecture: string
+  /** Almost always empty in Chrome. */
+  description: string
+  /**
+   * WebGPU's own software-adapter flag. `null` when the browser does not
+   * expose it, which Chrome 152 does not — hence the vendor check as well.
+   */
+  isFallbackAdapter: boolean | null
+}
+
 /** Main thread → worker. */
 export type ToWorker =
   /** Hand over the canvas. Sent once, with the canvas in the transfer list. */
@@ -53,6 +79,14 @@ export type ToWorker =
 /** Worker → main thread. */
 export type FromWorker =
   /** The GPU is up and the first frame can be drawn. */
-  | { type: 'ready'; report: GpuReport }
+  | { type: 'ready'; report: GpuReport; identity: WebGpuIdentity | null }
   /** Boot failed. Carries a human-readable reason for the page to display. */
   | { type: 'error'; message: string }
+  /**
+   * Frames actually presented so far, sampled periodically.
+   *
+   * Exists so an automated check can tell a running loop from a single frame
+   * that happened to be drawn. The count comes from the renderer, so it counts
+   * presented frames — not ticks sent, which would prove nothing.
+   */
+  | { type: 'stats'; frames: number }

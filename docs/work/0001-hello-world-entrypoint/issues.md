@@ -36,7 +36,7 @@ Notes:
 
 ---
 
-## 1. `ANTICIPATED` — WebGPU requires a secure context; the WSL IP is not one
+## 1. `RESOLVED` — WebGPU requires a secure context; the WSL IP is not one
 
 **Symptom (expected):** loading the page from Windows at
 `http://172.16.15.60:5173` serves fine, but `navigator.gpu` is `undefined` in
@@ -59,7 +59,28 @@ confusing "no suitable adapter" error rather than "insecure context".
 3. Last resort: serve the dev server over HTTPS with a self-signed certificate
    and accept the warning.
 
-**Status:** open until `F2` is done.
+**Outcome (group F):** never bit, for a reason worth recording. This machine
+runs WSL2 in **mirrored** networking mode (`networkingMode=mirrored` in
+`.wslconfig`), so WSL and Windows share a network namespace and
+`http://localhost:5173` resolves correctly from Windows Chrome with no
+forwarding, no flags and no HTTPS. Being a secure context, WebGPU is exposed
+normally.
+
+**But it looked broken at first, and the reason was a red herring:**
+`powershell.exe Invoke-WebRequest http://localhost:5173/` **times out**, which
+reads exactly like a networking failure. It is PowerShell's proxy
+autodetection, not the network. Windows `curl.exe` against the identical URL
+returns 200 immediately:
+
+```
+/mnt/c/Windows/System32/curl.exe -s -o NUL -w "%{http_code}" http://localhost:5173/
+```
+
+**Use `curl.exe`, never `Invoke-WebRequest`, to test WSL↔Windows reachability.**
+The false negative cost real time here and would cost it again.
+
+Note this conclusion is specific to mirrored mode. On a NAT-mode WSL2 setup the
+original analysis stands, and the fallbacks above are still the right ladder.
 
 ---
 
@@ -86,7 +107,7 @@ did not need upgrading. The pin is load-bearing — see §8.
 
 ---
 
-## 3. `ANTICIPATED` — dedicated workers have no `requestAnimationFrame`
+## 3. `RESOLVED` — dedicated workers have no `requestAnimationFrame`
 
 **Symptom (expected):** the obvious implementation — run the frame loop inside
 the worker with `requestAnimationFrame` — fails, because `rAF` is not defined
@@ -103,11 +124,17 @@ not vsync-aligned and will tear or stutter.
 This is a real architectural decision, not a workaround — it is written up in
 `todo.md` §E4 and `H2` so later systems inherit it deliberately.
 
-**Status:** open until `E4` is done.
+**Outcome (groups E/F):** implemented as planned and confirmed working under
+load — `boot.ts` runs the rAF loop and posts `{type:'tick', t}`; the worker
+renders on receipt. Measured at ~120 fps in Chrome on Windows, so the
+postMessage-per-frame cost is not a bottleneck at this scale.
+
+Recorded as an architecture note in `docs/architecture/frame-loop.md` (`H2`),
+because every later system inherits it.
 
 ---
 
-## 4. `ANTICIPATED` — Vite may not resolve the `.wasm` URL inside a worker bundle
+## 4. `RESOLVED` — Vite may not resolve the `.wasm` URL inside a worker bundle
 
 **Symptom (expected):** the page loads, the worker starts, then `init()` throws
 a 404 or a `WebAssembly.instantiate` failure because the glue asked for
@@ -150,7 +177,7 @@ rejects anything else. Production emits a hashed
 
 ---
 
-## 5. `ANTICIPATED` — reaching a Windows-side chromedriver from WSL
+## 5. `RESOLVED` — reaching a Windows-side chromedriver from WSL
 
 **Symptom (expected):** `scripts/test-chrome.mjs` running under WSL cannot
 connect to `http://localhost:9515` after starting `chromedriver.exe`, because
@@ -168,11 +195,18 @@ WebDriver client at `http://<host>:9515`. Also pass
 connections from the local machine and will otherwise reject WSL as a remote
 client.
 
-**Status:** open until `G2` is done.
+**Outcome (group F/G):** did not occur, again because of mirrored networking.
+`chromedriver.exe --port=9515` on Windows is reachable from WSL at plain
+`http://localhost:9515`. It prints *"Only local connections are allowed"* and
+accepts us anyway — under mirrored mode WSL **is** local.
+
+So none of the planned workarounds were needed: no `/etc/resolv.conf` lookup,
+no `--allowed-ips`. `scripts/test-chrome.mjs` defaults to `localhost:9515` and
+takes a `DRIVER_URL` override for setups where that is not true.
 
 ---
 
-## 6. `ANTICIPATED` — a software adapter would make the whole test meaningless
+## 6. `RESOLVED` — a software adapter would make the whole test meaningless
 
 **Symptom (expected):** everything "works" — triangle renders, no errors — but
 the adapter is SwiftShader / a warp device, which is exactly the failure mode
@@ -188,7 +222,48 @@ failure into a passing test.
 failure, not a pass. Do **not** add `--enable-unsafe-swiftshader` to make a
 headless run go green. Cross-check `chrome://gpu` on first run.
 
-**Status:** open until `F4`/`G1` are done.
+**Outcome (group F): the danger was real, and the original defence was almost
+useless.** This is the most important finding of the unit of work.
+
+`HelloReport.is_software` matched on `DeviceType::Cpu` or a known software name.
+On the WebGPU backend, **neither signal carries information**:
+
+- `AdapterInfo.name` is mapped from `GPUAdapterInfo.description`, which Chrome
+  leaves **empty** for fingerprinting reasons. Every name marker was dead code.
+- `device_type` is only ever `Cpu` or `Other` — wgpu derives it solely from
+  `isFallbackAdapter` (`wgpu-30.0.1/src/backend/webgpu.rs:926`).
+
+So a pass meant "Chrome did not hand us its explicit fallback adapter" and
+nothing more. The first run duly reported `adapter: (empty)`, `type: Other`,
+`software=false` — a green result with no evidence behind it. Exactly the
+false confidence this issue was written to prevent, arrived at from an angle
+the plan did not anticipate.
+
+**Resolution — two independent signals instead of one hollow one:**
+
+1. wgpu's `isSoftware` is kept. `DeviceType::Cpu` is genuinely reliable *when
+   true*, since it is Chrome's own fallback flag.
+2. `worker.ts` additionally reads `GPUAdapterInfo.vendor` / `.architecture`
+   straight from WebGPU — fields wgpu does not map (upstream TODO, gfx-rs
+   issue 8819) but Chrome **does** expose. A vendor of `nvidia`/`amd`/`intel`
+   is positive evidence of hardware; `swiftshader`/`microsoft`/`llvmpipe` is
+   positive evidence against.
+
+The verdict is now three-valued — `ok`, `software`, `unknown` — because a
+browser withholding the vendor deserves an honest "cannot confirm" rather than
+a silent pass. The smoke test fails on `software`, warns on `unknown`.
+
+**Measured result:**
+
+```
+vendor    nvidia          architecture  turing
+chrome://gpu → WebGPU: Hardware accelerated
+             → GPU0: NVIDIA GeForce RTX 2080 Ti  *ACTIVE*
+             → GPU1: Microsoft Basic Render Driver  (present, not active)
+```
+
+The software rasteriser exists on this machine and is not being used —
+confirmed from a source entirely independent of our code.
 
 ---
 
@@ -448,3 +523,58 @@ shader runs, or that a single frame is drawn. The first genuine end-to-end
 signal comes from loading the page in Windows Chrome — group F. Anticipated
 issues §1 (secure context) and §6 (software adapter) are still open and are
 the two most likely to bite there.
+
+---
+
+## 17. `RESOLVED` — the smoke test's first assertion was vacuous
+
+**Symptom:** the first full run failed `at least one frame was presented`
+(`first = 0`) while simultaneously passing `the frame count advanced`
+(`0 -> 180`). A test contradicting itself.
+
+**Cause:** the worker posts its frame count every 30 ticks, so the count is
+still absent for the first ~250ms after `ready`. The test read it immediately.
+
+**Resolution:** poll until the count is non-zero (5s budget) before measuring
+advancement. The check now means what its name says.
+
+**Worth generalising:** the failure was in the *test*, and it failed in the
+safe direction — it flagged working code rather than passing broken code. A
+test that had instead read the count once and asserted `>= 0` would have
+passed forever while checking nothing.
+
+---
+
+## 18. `RESOLVED` — a missing favicon logs at SEVERE
+
+**Symptom:** `no SEVERE console messages` failed on
+`favicon.ico - Failed to load resource: 404`.
+
+**Cause:** browsers request `/favicon.ico` unprompted, and Chrome logs the 404
+at SEVERE — the same level as a real error.
+
+**Resolution:** an inline SVG data-URI favicon in `index.html`. No request, no
+404, and the SEVERE check stays meaningful instead of needing an exception that
+would also hide genuine errors.
+
+---
+
+## 19. `OPEN` (upstream, benign) — `powerPreference` is ignored on Windows
+
+**Symptom:** every run logs
+`The powerPreference option is currently ignored when calling requestAdapter()
+on Windows. See https://crbug.com/369219127` — twice, once for wgpu's adapter
+request and once for our diagnostic probe.
+
+**Cause:** a known Chromium limitation. `Renderer::new` asks for
+`PowerPreference::HighPerformance`; on Windows Chrome picks the adapter itself.
+
+**Impact: none observed here.** Chrome selected the discrete RTX 2080 Ti over
+the integrated/basic adapter anyway.
+
+**Why it stays open:** it is not our bug and there is nothing to fix, but it
+matters on laptops with switchable graphics, where Chrome choosing for us could
+mean the integrated GPU. If frame times ever look wrong on such a machine,
+check `chrome://gpu` for which adapter is `*ACTIVE*` before suspecting our code.
+The `powerPreference` request is left in place so it takes effect if and when
+Chromium honours it.

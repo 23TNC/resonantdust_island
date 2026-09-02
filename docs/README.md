@@ -7,9 +7,10 @@ A single-player survival RPG with adult content, built in Rust, rendered with
 
 ## Layout
 
-| Path         | Purpose                                                              |
-|--------------|----------------------------------------------------------------------|
-| `work/`      | Planned units of work. One folder per unit. See `work/README.md`.     |
+| Path            | Purpose                                                           |
+|-----------------|-------------------------------------------------------------------|
+| `work/`         | Planned units of work. One folder per unit. See `work/README.md`. |
+| `architecture/` | Decisions later work must respect. One file per decision.         |
 
 ## Design pillars (reference for planning)
 

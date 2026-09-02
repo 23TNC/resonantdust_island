@@ -8,7 +8,7 @@
  *   3. Report the worker's status to the page.
  */
 
-import type { FromWorker, GpuReport, ToWorker } from './protocol'
+import type { FromWorker, GpuReport, ToWorker, WebGpuIdentity } from './protocol'
 
 const canvas = document.getElementById('viewport') as HTMLCanvasElement | null
 const statusEl = document.getElementById('status')
@@ -69,34 +69,83 @@ function send(message: ToWorker, transfer?: Transferable[]): void {
   else worker.postMessage(message)
 }
 
-function renderReport(report: GpuReport): void {
+/** Vendor strings that mean a software rasteriser rather than a GPU. */
+const SOFTWARE_VENDORS = /swiftshader|llvmpipe|lavapipe|software|basic render|warp|microsoft/i
+/** Vendor strings that positively identify real hardware. */
+const HARDWARE_VENDORS = /nvidia|amd|ati|intel|apple|qualcomm|arm|imagination|broadcom|mesa/i
+
+/**
+ * Decide whether we are on real hardware, from two independent signals.
+ *
+ * Neither is sufficient alone. wgpu's `isSoftware` is derived from
+ * `DeviceType::Cpu`, which on the WebGPU backend is Chrome's
+ * `isFallbackAdapter` — reliable when true, but wgpu reports every non-fallback
+ * adapter as "Other" with a blank name, so a pass carries no positive
+ * evidence. The vendor string supplies that evidence.
+ */
+function classify(
+  report: GpuReport,
+  identity: WebGpuIdentity | null,
+): { state: 'ok' | 'software' | 'unknown'; reason: string } {
+  if (report.isSoftware) {
+    return { state: 'software', reason: 'wgpu reports a CPU/fallback adapter' }
+  }
+  if (identity?.isFallbackAdapter === true) {
+    return { state: 'software', reason: 'WebGPU reports a fallback adapter' }
+  }
+  const vendor = identity?.vendor ?? ''
+  if (vendor && SOFTWARE_VENDORS.test(vendor)) {
+    return { state: 'software', reason: `vendor "${vendor}" is a software rasteriser` }
+  }
+  if (vendor && HARDWARE_VENDORS.test(vendor)) {
+    return { state: 'ok', reason: `vendor "${vendor}" is real hardware` }
+  }
+  // Not a fallback adapter, but nothing positively identifies the hardware
+  // either. Not a failure, but not proof.
+  return { state: 'unknown', reason: 'adapter vendor not reported by the browser' }
+}
+
+function renderReport(report: GpuReport, identity: WebGpuIdentity | null): void {
+  const { state, reason } = classify(report, identity)
+
   const lines = [
-    `adapter    ${report.adapterName}`,
+    `vendor     ${identity?.vendor || '(withheld)'}`,
+    `arch       ${identity?.architecture || '(withheld)'}`,
+    // wgpu leaves this blank on WebGPU — Chrome withholds the description it
+    // is mapped from. Shown anyway so the blank is explained rather than
+    // looking like a bug.
+    `adapter    ${report.adapterName || '(not exposed by WebGPU)'}`,
     `backend    ${report.backend}`,
     `type       ${report.deviceType}`,
-    `driver     ${report.driver || '(not reported)'}`,
     `surface    ${report.width}x${report.height}`,
+    ``,
+    `${state.toUpperCase()} — ${reason}`,
   ]
   statusEl!.textContent = lines.join('\n')
 
   // A software rasteriser renders the triangle perfectly and tells us nothing
   // about GPU support, which is the entire reason this is tested in Windows
   // Chrome rather than in WSL. Make it impossible to miss.
-  statusEl!.dataset.state = report.isSoftware ? 'software' : 'ok'
-  if (report.isSoftware) {
-    statusEl!.textContent += '\n\nSOFTWARE ADAPTER — not a real GPU.'
-  }
+  statusEl!.dataset.state = state
+  // Read by the smoke test, which needs the verdict rather than the prose.
+  document.documentElement.dataset.gpu = state
+  document.documentElement.dataset.vendor = identity?.vendor ?? ''
 }
 
 worker.onmessage = (event: MessageEvent<FromWorker>) => {
   const message = event.data
   switch (message.type) {
     case 'ready':
-      renderReport(message.report)
+      renderReport(message.report, message.identity)
       break
     case 'error':
       statusEl!.textContent = message.message
       statusEl!.dataset.state = 'error'
+      break
+    case 'stats':
+      // Published on the document so the smoke test can read it twice and
+      // confirm it is climbing. Presented frames, not ticks sent.
+      document.documentElement.dataset.frames = String(message.frames)
       break
   }
 }

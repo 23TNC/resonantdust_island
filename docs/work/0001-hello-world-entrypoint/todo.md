@@ -1,7 +1,7 @@
 # 0001 — Hello World Entrypoint
 
-**Status:** `[~]` in progress — groups A–E complete; only F/G (run it
-on Windows) remain
+**Status:** `[x]` **COMPLETE** — verified end to end in Chrome on Windows
+against an NVIDIA RTX 2080 Ti at ~120 fps.
 **Goal:** Stand up the smallest end-to-end slice of the real architecture: a
 Rust program compiled to WebAssembly, running inside a Web Worker, driving
 `wgpu` against a real GPU through WebGPU, drawing to an `OffscreenCanvas` on
@@ -241,14 +241,14 @@ evidence. Whether WebGPU actually initialises is exactly what group F tests.
 
 ### F. Run it on Windows
 
-- [ ] `F1` Start the dev server from WSL: `scripts/dev.sh` → `npm run dev` in
+- [x] `F1` Start the dev server from WSL: `scripts/dev.sh` → `npm run dev` in
       `web/`.
-- [ ] `F2` Confirm Windows can reach it. Try `http://localhost:5173` **first** —
+- [x] `F2` Confirm Windows can reach it. Try `http://localhost:5173` **first** —
       WSL2 forwards listening ports to the Windows loopback, and `localhost` is
       a *secure context*, which WebGPU requires. `http://172.16.15.60:5173`
       will serve the page but `navigator.gpu` will be `undefined` there. See
       `issues.md` §1.
-- [ ] `F3` Launch Windows Chrome from WSL:
+- [x] `F3` Launch Windows Chrome from WSL:
       ```
       "/mnt/c/Program Files/Google/Chrome/152.0.7977.42/chrome-win64/chrome.exe" \
         --user-data-dir=C:\\temp\\rd-island-profile \
@@ -256,37 +256,60 @@ evidence. Whether WebGPU actually initialises is exactly what group F tests.
       ```
       A dedicated `--user-data-dir` keeps the test profile out of the user's
       real Chrome profile and avoids "Chrome is already running" no-ops.
-- [ ] `F4` Verify by eye:
+- [x] `F4` Verify by eye:
       - canvas is filled with the clear colour, not white/black default
       - the triangle is drawn and **animating**
       - `#status` names a real adapter (e.g. a discrete/integrated GPU via the
         `Dawn`/D3D12 backend), **not** SwiftShader or a warp/software device
       - devtools console shows `hello world from Rust`
-- [ ] `F5` Cross-check against `chrome://gpu` in the same profile: WebGPU must
+- [x] `F5` Cross-check against `chrome://gpu` in the same profile: WebGPU must
       be listed as hardware accelerated.
+
+**Result — measured, not asserted:**
+
+```
+WebGPU:  Hardware accelerated
+GPU0:    NVIDIA GeForce RTX 2080 Ti, DRIVER_VERSION=32.0.15.7652  *ACTIVE*
+GPU1:    Microsoft Basic Render Driver                            (not active)
+```
+
+The software rasteriser is present on the machine and is **not** the one in
+use. That is exactly the condition issue §6 was written to check, confirmed
+from a source independent of our own code.
+
+Via WebGPU itself: `vendor "nvidia"`, `architecture "turing"`. Rendering at
+~120 fps, headed and headless alike.
 
 ### G. Repeatable automated check
 
-- [ ] `G1` `scripts/test-chrome.mjs` — drive `chromedriver.exe` over WebDriver:
+- [x] `G1` `scripts/test-chrome.mjs` — drive `chromedriver.exe` over WebDriver:
       launch Chrome, load the page, wait for `#status` to be populated, read
       the adapter report and the browser console log, assert no `error`
       message was posted, and assert the adapter is not a software fallback.
-- [ ] `G2` Reaching a Windows-side `chromedriver` from WSL means talking to a
+- [x] `G2` Reaching a Windows-side `chromedriver` from WSL means talking to a
       port on the Windows host, not `localhost`. Resolve the host IP from the
       default gateway / `/etc/resolv.conf` nameserver. See `issues.md` §5.
-- [ ] `G3` Decide headless vs headed for the automated run and record the
+- [x] `G3` Decide headless vs headed for the automated run and record the
       decision. Headless must still use the real GPU — if it silently falls
       back to SwiftShader the check is worthless, so the software-adapter
       assertion in `G1` is what makes headless safe to trust.
 
+      **Decision: headed by default, `--headless` available and safe.** Both
+      were measured and both get the RTX 2080 Ti at ~120 fps, so headless costs
+      nothing in fidelity here. Headed stays the default because this is a game
+      and a human should be looking at it; `--headless` is there for CI. What
+      makes either trustworthy is the vendor assertion, not the mode.
+- [x] `G4` *(added)* `--screenshot <path>` — captures the canvas so a render
+      can be inspected after a headless run.
+
 ### H. Wrap up
 
-- [ ] `H1` Fill in `issues.md` with everything actually hit — the open items
+- [x] `H1` Fill in `issues.md` with everything actually hit — the open items
       below are predictions, not findings.
-- [ ] `H2` Record the frame-loop decision (main-thread rAF drives the worker)
+- [x] `H2` Record the frame-loop decision (main-thread rAF drives the worker)
       in `docs/` as an architecture note, since every later system depends on
       it.
-- [ ] `H3` Note in `issues.md` any version pins that turned out to be load-
+- [x] `H3` Note in `issues.md` any version pins that turned out to be load-
       bearing, so the next unit of work does not undo them.
 
 ---
