@@ -274,3 +274,93 @@ retuned without touching stored data, and so it is unambiguous whether a stored
 camera pitch — both are "looks right" judgements and both are single constants.
 Note that the two interact: a lower camera pitch exaggerates cliff faces, so
 the right `HEIGHT_STEP` depends on the pitch chosen.
+
+---
+
+## 12. `RESOLVED` — the seed was interchangeable with the X coordinate
+
+**The most serious defect so far, and it would have shipped looking fine.**
+
+**Symptom:** printing the golden values before baking them showed two things
+wrong in six lines of output:
+
+```
+hash_2d(0, 0, 0) => 0x00000000
+hash_2d(1, 0, 0) => 0x58f54975
+hash_2d(0, 0, 1) => 0x58f54975     <-- identical
+```
+
+**Cause.** The construction was the obvious one:
+
+```rust
+let h = mix(seed ^ (x as u32));
+mix(h ^ (z as u32))
+```
+
+Two separate problems fall out of it:
+
+1. **Seed and X are symmetric.** `mix(seed ^ x)` cannot tell which operand was
+   which, so `(x=1, seed=0)` and `(x=0, seed=1)` hash identically. The
+   consequence is not a subtle statistical flaw — **changing the seed would
+   have translated the world instead of regenerating it.** Every "new" seed
+   would produce the same terrain shifted by a tile.
+2. **Zero is a fixed point of the mixer.** Every operation in `mix` maps 0 to
+   0: `0 ^ 0 == 0` and `0 * k == 0`. So the default seed had a hard artefact
+   nailed to the world origin.
+
+**Why it would not have been caught later.** The terrain from seed 1 and seed 2
+would both have looked entirely plausible. Nothing errors, nothing is NaN, the
+range is right, the noise is continuous. It would have surfaced as a vague
+"seeds don't seem to do much" long after the cause was buried — if at all.
+
+**Resolution:** three rounds, each folding in one input pre-multiplied by its
+own large odd constant, plus a non-zero salt so all-zero input is not a fixed
+point. Both defects now have named regression tests, and a third
+(`changing_the_seed_does_not_merely_translate_the_world`) checks the property
+on the actual noise field across every small offset, which is the form the bug
+would have taken visually.
+
+**The lesson worth keeping.** Golden values were about to be baked in by
+copying whatever the implementation produced. Had they been pasted without
+being read, the tests would have locked the bug in and defended it against
+future correction. **A characterisation test records behaviour; it does not
+check it.** Read the values before trusting them.
+
+---
+
+## 13. `RESOLVED` — an assertion that was wrong about correct code
+
+**Symptom:** `all_zero_input_does_not_hash_to_zero` failed on
+`assert_ne!(mix(0), 0)`.
+
+**Cause:** the assertion was wrong, not the code. `mix(0) == 0` is exactly the
+fixed point described in §12 — it is a property of xor-shift-multiply mixers,
+not a defect in this one. The salt in `hash_2d` is what keeps that fixed point
+out of the world.
+
+**Resolution:** assert `mix(0) == 0` to document that the fixed point is real,
+then assert `hash_2d(0, 0, 0) != 0` to show the salt handles it. The test now
+explains why the salt exists instead of asserting it away.
+
+Recorded because the failure looked at first glance like the §12 fix not
+working, which is a misleading place to start debugging from.
+
+---
+
+## 14. `RESOLVED` — quintic fade rather than cubic
+
+**Symptom:** would have appeared as a faint regular grid of creases across the
+terrain under directional lighting — the usual tell of a hand-rolled value
+noise.
+
+**Cause:** the common `3t² - 2t³` smoothstep has a discontinuous *second*
+derivative at 0 and 1. The surface is continuous and its slope is continuous,
+but its curvature jumps at every lattice line, and shading is sensitive enough
+to show it.
+
+**Resolution:** Perlin's quintic fade, `6t⁵ - 15t⁴ + 10t³`, whose first and
+second derivatives are both zero at the ends. Written as nested multiplication,
+so it stays inside the arithmetic-only rule from §2.
+
+Cheap to choose correctly now and annoying to diagnose later, since the
+artefact only appears once terrain is lit — group `F3`.

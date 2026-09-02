@@ -1,6 +1,6 @@
 # 0002 — Tile World Generation
 
-**Status:** `[~]` in progress — groups A and B complete
+**Status:** `[~]` in progress — groups A, B and C complete
 **Depends on:** `0001-hello-world-entrypoint` (complete)
 **Goal:** Generate a deterministic, seeded tile world with terrain elevation and
 render it — replacing the hello triangle with something that is actually the
@@ -152,20 +152,30 @@ consumer has to handle (`issues.md` §10).
 
 ### C. Deterministic noise — `island_core::world::noise`
 
-- [ ] `C1` Integer hash (wrapping multiply / xorshift on `u32`) → `f32` in
+- [x] `C1` Integer hash (wrapping multiply / xorshift on `u32`) → `f32` in
       `[0,1)`. Seeded.
-- [ ] `C2` 2D value noise with smoothstep interpolation.
-- [ ] `C3` fBm: several octaves with configurable lacunarity and gain.
-- [ ] `C4` **Use no `sin`, `cos`, `powf`, or any transcendental in the noise
+- [x] `C2` 2D value noise with smoothstep interpolation.
+- [x] `C3` fBm: several octaves with configurable lacunarity and gain.
+- [x] `C4` **Use no `sin`, `cos`, `powf`, or any transcendental in the noise
       path.** IEEE-754 pins `+ - * /` exactly, but transcendental functions are
       free to differ between libm implementations — which here means **wasm and
       native could generate different worlds from the same seed**. A survival
       game with shareable seeds and saved worlds cannot tolerate that. Use
       integer hashing and polynomial interpolation only.
-- [ ] `C5` Tests: same seed → identical output; different seeds → different
+- [x] `C5` Tests: same seed → identical output; different seeds → different
       output; output stays within `[0,1]`; **golden values** for a handful of
       fixed inputs, so an accidental change to the hash is caught rather than
       silently reshaping every future world.
+- [x] `C6` *(added)* `C4` is enforced by a test that scans this module's own
+      source for transcendental **call syntax**, rather than being trusted to a
+      comment. Matches `.sin(` and friends, not bare words, so the module docs
+      can name them.
+- [x] `C7` *(added)* Regression tests for two defects found by reading the
+      golden values before baking them — see `issues.md` §12.
+
+**Verified:** 46 tests green, clippy clean on both targets. Quintic fade rather
+than cubic, so lighting does not pick out a grid of creases along the lattice
+lines.
 
 ### D. Generation — `island_core::world::generate`
 

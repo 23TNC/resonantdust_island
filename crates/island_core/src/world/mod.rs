@@ -4,8 +4,10 @@
 //! right, Y up, Z toward the viewer; one tile is `1.0` world unit; a tile's
 //! origin is its horizontal centre at ground height.
 
+mod noise;
 mod tile;
 
+pub use noise::{hash_2d, hash_to_unit, value_noise_2d, Fbm};
 pub use tile::TileKind;
 
 use glam::Vec3;
