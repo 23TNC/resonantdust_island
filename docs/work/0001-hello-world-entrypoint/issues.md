@@ -63,7 +63,7 @@ confusing "no suitable adapter" error rather than "insecure context".
 
 ---
 
-## 2. `ANTICIPATED` — `wasm-bindgen` crate/CLI version mismatch
+## 2. `RESOLVED` — `wasm-bindgen` crate/CLI version mismatch (did not occur)
 
 **Symptom (expected):** `wasm-bindgen` CLI aborts with a message about the
 schema version of the `.wasm` not matching the CLI, naming two `0.2.x`
@@ -79,7 +79,10 @@ requires a newer `wasm-bindgen`, upgrade the CLI instead
 (`cargo install -f wasm-bindgen-cli --version <x>`) and update the pin — do not
 downgrade `wgpu` to preserve a CLI version.
 
-**Status:** open until `C2` is done.
+**Outcome (group A):** did not occur. `wgpu 30.0.1` resolves against
+`wasm-bindgen =0.2.127` with no conflict, and the pin is in
+`[workspace.dependencies]` with a comment explaining why it is exact. The CLI
+did not need upgrading. The pin is load-bearing — see §8.
 
 ---
 
@@ -169,15 +172,78 @@ headless run go green. Cross-check `chrome://gpu` on first run.
 
 ---
 
-## 7. `OPEN` — the working directory is not a git repository
+## 7. `RESOLVED` — the working directory is not a git repository
 
 **Symptom:** no version control; nothing here is recoverable if it is
 overwritten.
 
-**Resolution:** `git init` as task `A4`, before any code is written.
+**Resolution:** `git init`, first commit, pushed to
+`git@github.com:23TNC/resonantdust_island.git` on `main`.
+
+**Incidental finding:** the global git identity was
+`user.name = PurpleDimension`, `user.email = None` — the literal string
+`None`, not an address. Commits made with it would author as
+`PurpleDimension <None>` and GitHub would not attribute them to the account.
+Set `user.email` **repo-locally** to the account address; global config left
+untouched. Worth checking before the first commit on any future clone.
 
 ---
 
-## Issues actually encountered
 
-*(nothing yet — the work has not started)*
+---
+
+## 8. `RESOLVED` — dependency versions verified for wasm32
+
+Not a failure — recorded because these versions are now load-bearing and the
+next unit of work should not casually bump them.
+
+Resolved and **compiled** with `cargo check --target wasm32-unknown-unknown`
+(125 packages, 48s clean):
+
+| Crate | Version | Note |
+|---|---|---|
+| `wgpu` | 30.0.1 | latest published |
+| `wasm-bindgen` | **0.2.127** | pinned `=`, must match the installed CLI |
+| `wasm-bindgen-futures` | 0.4.77 | |
+| `web-sys` | 0.3.104 | |
+| `js-sys` | 0.3.104 | |
+| `bytemuck` | 1.25.2 | `derive` feature on |
+| `thiserror` | 2.0.20 | |
+| `log` | 0.4.x | |
+| `console_log` | 1.1.0 | |
+| `console_error_panic_hook` | 0.1.7 | |
+
+The verification was done with a throwaway `crates/_validate` member that
+depended on all ten, then deleted. This proves the whole graph builds for the
+real target *before* any of our own code exists, so a compile failure in group
+B or C is unambiguously our code rather than a bad version pin.
+
+`Cargo.lock` was deliberately **not** committed at this stage: the only lock
+that existed named the deleted `_validate` crate. It gets generated for real
+in `B1` and committed then — it is an application workspace, so the lock does
+belong in version control.
+
+---
+
+## 9. `RESOLVED` — an empty workspace does not parse
+
+**Symptom:** with `members = ["crates/*"]` and no crates yet, every cargo
+command fails:
+
+```
+error: failed to load manifest for workspace member `.../crates/*`
+Caused by: failed to read `.../crates/*/Cargo.toml`
+```
+
+**Cause:** cargo does not glob-expand a members pattern to zero matches — it
+falls back to treating the literal `crates/*` string as a member path. Creating
+an empty `crates/` directory does not help; the glob needs at least one real
+member.
+
+**Resolution:** none needed beyond sequencing. The workspace manifest is
+correct; it simply cannot be exercised until `B1` creates `island_core`.
+Verified in the meantime via the throwaway member described in §8.
+
+**Consequence for anyone picking this up mid-stream:** between the end of group
+A and the start of group B, `cargo` commands at the repo root will fail with
+the error above. This is expected, not a broken checkout.

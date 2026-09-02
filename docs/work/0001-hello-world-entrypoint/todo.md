@@ -1,6 +1,6 @@
 # 0001 — Hello World Entrypoint
 
-**Status:** `[ ]` not started
+**Status:** `[~]` in progress — group A complete
 **Goal:** Stand up the smallest end-to-end slice of the real architecture: a
 Rust program compiled to WebAssembly, running inside a Web Worker, driving
 `wgpu` against a real GPU through WebGPU, drawing to an `OffscreenCanvas` on
@@ -73,15 +73,24 @@ resonantdust_island/
 
 ### A. Repository scaffolding
 
-- [ ] `A1` Create the Cargo workspace root `Cargo.toml` with
+- [x] `A1` Create the Cargo workspace root `Cargo.toml` with
       `members = ["crates/*"]` and a `[workspace.dependencies]` block so crate
-      versions are pinned in one place.
-- [ ] `A2` Add `rust-toolchain.toml` pinning the stable channel and declaring
+      versions are pinned in one place. Also sets `[profile.dev.package."*"]
+      opt-level = 2` so `wgpu` is optimised in debug builds while our own code
+      stays debuggable.
+- [x] `A2` Add `rust-toolchain.toml` pinning the stable channel and declaring
       `targets = ["wasm32-unknown-unknown"]`, so the target is installed
-      automatically on a fresh checkout.
-- [ ] `A3` Add `.gitignore` covering `target/`, `node_modules/`,
+      automatically on a fresh checkout. Pinned to `1.97.1` with `rustfmt` and
+      `clippy`.
+- [x] `A3` Add `.gitignore` covering `target/`, `node_modules/`,
       `web/src/generated/`, `web/dist/`.
-- [ ] `A4` `git init` — the working directory is not yet a repository.
+- [x] `A4` `git init` — the working directory is not yet a repository. Done,
+      pushed to `git@github.com:23TNC/resonantdust_island.git`.
+
+**Verified:** the pinned dependency set resolves (125 packages) *and*
+`cargo check --target wasm32-unknown-unknown` passes against it. See
+`issues.md` §8 for the resolved version table and §9 for the empty-workspace
+wrinkle.
 
 ### B. `island_core` — the engine crate
 
@@ -260,9 +269,9 @@ Named so they do not creep in:
 
 ## Open questions to answer while doing the work
 
-- **Which `wgpu` version?** Latest published is `30.0.1`. Confirm its
-  `wasm-bindgen` requirement is compatible with the pinned `=0.2.127`; if it is
-  not, the CLI gets upgraded to match the crate, not the other way round.
+- ~~**Which `wgpu` version?**~~ **ANSWERED (group A):** `wgpu 30.0.1` resolves
+  and compiles against `wasm-bindgen =0.2.127`, matching the installed CLI. No
+  CLI upgrade needed. Versions recorded in `issues.md` §8.
 - **Does Vite resolve the wasm asset correctly inside a module worker?**
   `wasm-bindgen --target web` glue locates the `.wasm` via
   `new URL('island_web_bg.wasm', import.meta.url)`. If Vite mangles that in the

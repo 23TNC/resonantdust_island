@@ -1,0 +1,6 @@
+# Pinned so a fresh checkout builds with a known compiler and installs the
+# wasm target automatically. Raise deliberately, not incidentally.
+[toolchain]
+channel = "1.97.1"
+targets = ["wasm32-unknown-unknown"]
+components = ["rustfmt", "clippy"]
