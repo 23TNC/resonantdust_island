@@ -364,3 +364,70 @@ so it stays inside the arithmetic-only rule from §2.
 
 Cheap to choose correctly now and annoying to diagnose later, since the
 artefact only appears once terrain is lit — group `F3`.
+
+---
+
+## 15. `RESOLVED` — fBm never reaches its own range, so snow never existed
+
+**Symptom:** the first generated world contained **zero snow tiles**. The
+material histogram from the `inspect_world` diagnostic:
+
+```
+params    min=-8 max=24 sea=6
+heights   actual range -3..=18
+  water    31216   47.6%
+  sand      5252    8.0%
+  grass    25934   39.6%
+  rock      3134    4.8%
+  snow         0    0.0%
+```
+
+**Cause.** fBm is a sum of octaves normalised by total amplitude. Reaching
+either extreme of `[0, 1)` requires *every* octave to agree at that point,
+which effectively never happens — so the practical output occupies a much
+narrower band than the nominal range. Mapped linearly onto `min_height..=max_height`,
+the terrain topped out at **18 against a `max_height` of 24**.
+
+The material bands were computed from `max_height`, which put the snow
+threshold at height 20.6 — above the highest ground in the world. Snow was not
+rare; it was *unreachable*.
+
+**Resolution:** generation is now two passes. The first lays down heights; the
+second classifies them using the world's **observed** peak. Water and beach
+stay absolute, because sea level is a real elevation and should not drift with
+the terrain, but the land bands above them are relative — so the highest ground
+is always snow-capped whatever the noise produced. Still fully deterministic:
+the peak is a function of the heights, which are a function of the params.
+
+Result: water 47.6% / sand 8.0% / grass 26.3% / rock 16.0% / snow 2.0%.
+
+**What this says about the parameters.** `min_height` and `max_height` are
+*theoretical* bounds of the noise mapping, not observed bounds of the terrain,
+and their doc comments now say so. Anything that reasons about the terrain's
+actual extent must measure it rather than read the params.
+
+**How it was caught:** the `inspect_world` diagnostic, printing a histogram
+before anything was baked into a test. A determinism test, a range test, and a
+"sea level is water" test all passed on the broken version — none of them can
+see that a band is empty. Following §12's lesson, the output was read rather
+than assumed.
+
+---
+
+## 16. `RESOLVED` — heights could exceed `max_height` when the range was degenerate
+
+**Symptom:** not observed in practice; found while writing the test that
+asserts heights lie within the configured range.
+
+**Cause:** `height_span()` floors at 1 so the noise mapping never divides by
+zero. With `min_height == max_height` that produces a span of 1 where the true
+span is 0, letting a height land one step above `max_height`.
+
+**Resolution:** clamp the result, with bounds ordered explicitly rather than
+via `clamp` — which panics if its bounds are reversed, and inverted parameters
+are exactly the kind of thing a save file or a tuning UI could deliver.
+Confirmed a no-op on normal parameters: the default world's hash is unchanged
+by the clamp.
+
+Now unconditional: heights lie within `min..=max` for any parameters, equal or
+inverted included, and both cases have tests.

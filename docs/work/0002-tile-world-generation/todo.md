@@ -1,6 +1,6 @@
 # 0002 — Tile World Generation
 
-**Status:** `[~]` in progress — groups A, B and C complete
+**Status:** `[~]` in progress — groups A–D complete
 **Depends on:** `0001-hello-world-entrypoint` (complete)
 **Goal:** Generate a deterministic, seeded tile world with terrain elevation and
 render it — replacing the hello triangle with something that is actually the
@@ -179,19 +179,32 @@ lines.
 
 ### D. Generation — `island_core::world::generate`
 
-- [ ] `D1` Heightmap from fBm, quantised to integer steps per `A3`.
-- [ ] `D2` Classify tiles into kinds by elevation band (water below sea level,
+- [x] `D1` Heightmap from fBm, quantised to integer steps per `A3`.
+- [x] `D2` Classify tiles into kinds by elevation band (water below sea level,
       sand at the margin, grass, rock, snow). Bands as named constants, not
       magic numbers scattered through the function.
-- [ ] `D3` `WorldParams { seed, width, depth, sea_level, ... }` so generation is
+- [x] `D3` `WorldParams { seed, width, depth, sea_level, ... }` so generation is
       one reproducible call with no hidden global state.
-- [ ] `D4` `world_hash()` — a cheap order-independent-free checksum over all
+- [x] `D4` `world_hash()` — a cheap order-independent-free checksum over all
       heights and kinds. Its purpose is `G3`: proving the browser generates a
       **bit-identical** world to the native test run. That is the only way to
       actually catch the wasm/native divergence `C4` guards against; without it
       the guard is an untested assumption.
-- [ ] `D5` Tests: determinism, height range within bounds, sea level produces
+- [x] `D5` Tests: determinism, height range within bounds, sea level produces
       water, a fixed seed matches a golden `world_hash`.
+- [x] `D6` *(added)* Generation is **two passes**. Land material bands scale
+      from the world's *observed* peak rather than from `max_height`, because
+      fBm never reaches its nominal ceiling. See `issues.md` §15 — the first
+      version produced **zero snow tiles**.
+- [x] `D7` *(added)* An `#[ignore]`d `inspect_world` diagnostic that prints the
+      height range, material histogram and an ASCII map. Kept: it is how §15
+      was caught, and it is what `HEIGHT_STEP` and the camera pitch will be
+      tuned against in group F.
+
+**Verified:** 62 tests green, clippy clean on both targets. Default world is
+256×256, heights `-3..=18`, materials water 47.6% / sand 8.0% / grass 26.3% /
+rock 16.0% / snow 2.0%, `world_hash = 0xd34bfa9b078f3806`. That hash is what
+`G3` asserts the browser reproduces.
 
 ### E. Meshing — `island_core::world::mesh`
 
