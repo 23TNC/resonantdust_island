@@ -1,6 +1,6 @@
 # 0002 — Tile World Generation
 
-**Status:** `[~]` in progress — group A complete
+**Status:** `[~]` in progress — groups A and B complete
 **Depends on:** `0001-hello-world-entrypoint` (complete)
 **Goal:** Generate a deterministic, seeded tile world with terrain elevation and
 render it — replacing the hello triangle with something that is actually the
@@ -120,21 +120,35 @@ to be requested explicitly in `F4`.
 
 ### B. World data model — `island_core::world`
 
-- [ ] `B1` `TileKind` enum: `Water`, `Sand`, `Grass`, `Rock`, `Snow` to start.
+- [x] `B1` `TileKind` enum: `Water`, `Sand`, `Grass`, `Rock`, `Snow` to start.
       `#[repr(u8)]`, exhaustive `match` on colour so adding a kind is a compile
       error rather than an invisible black tile.
-- [ ] `B2` Per-tile data: `height: i16` and `kind: TileKind`. Store as parallel
+- [x] `B2` Per-tile data: `height: i16` and `kind: TileKind`. Store as parallel
       arrays (struct-of-arrays), not `Vec<Tile>` — meshing reads all heights
       and then all kinds, and the neighbour lookups in `E2` are the hot path.
-- [ ] `B3` `TileMap`: fixed `width × depth` in tiles, addressed by
+- [x] `B3` `TileMap`: fixed `width × depth` in tiles, addressed by
       `(x, z)`. Chunked at `CHUNK_SIZE` (start at 32×32 — see open questions).
       A chunk is the unit of mesh rebuild and the unit of culling.
-- [ ] `B4` Coordinate helpers, each with its own test: world position ↔ tile
+- [x] `B4` Coordinate helpers, each with its own test: world position ↔ tile
       index ↔ chunk index, plus neighbour access that returns `Option` at the
       world edge rather than wrapping or panicking. Off-by-one and silent
       wrapping here would surface as baffling visual artefacts much later.
-- [ ] `B5` Tests: round-trip conversions, edge and corner neighbour queries,
+- [x] `B5` Tests: round-trip conversions, edge and corner neighbour queries,
       out-of-bounds behaviour.
+- [x] `B6` *(added)* `TilePos` and `ChunkPos` as distinct types, so passing one
+      where the other belongs is a compile error rather than output that is
+      wrong by exactly one chunk.
+- [x] `B7` *(added)* `chunk_bounds` — tight world-space AABB per chunk, for the
+      frustum culling in `F5`. Y comes from the chunk's actual height range,
+      extended one step down to cover walls hanging below the lowest top face.
+- [x] `B8` *(added)* `HEIGHT_STEP` — world units per height step, so the
+      vertical scale is retunable without touching stored data and a stored
+      `5` is unambiguously five *steps*. See `issues.md` §11.
+
+**Verified:** 31 tests green, `clippy --all-targets -- -D warnings` clean on
+both host and wasm32. `TileMap::new` takes a size in **chunks**, making a
+chunk-misaligned world unrepresentable rather than an error every downstream
+consumer has to handle (`issues.md` §10).
 
 ### C. Deterministic noise — `island_core::world::noise`
 

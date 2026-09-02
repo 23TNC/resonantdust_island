@@ -36,6 +36,16 @@ roughly 1.8 tiles tall, and that is the whole conversion.
 
 ## Tile addressing
 
+Tile and chunk positions are **separate types** (`TilePos`, `ChunkPos`). Both
+are a pair of integers addressing the ground plane, and passing one where the
+other belongs is a bug that produces plausible output 32 tiles from where it
+should be. The compiler catches it instead.
+
+Tile→chunk conversion uses `div_euclid`, not `/`. Rust's `/` truncates toward
+zero, so `-1 / 32 == 0` would put tile `-1` in chunk `0` alongside tile `0`.
+
+Storage is row-major with **X varying fastest**: `index = z * width + x`.
+
 A tile is indexed by integers `(tx, tz)` and occupies:
 
 ```
@@ -128,15 +138,33 @@ rather than a matrix inverse, and means art is not drawn on a diagonal.
 
 ## Clip space
 
-**wgpu puts depth in `0..1`**, not OpenGL's `-1..1`.
+**wgpu puts depth in `0..1` with Y up.**
 
-Use `glam::Mat4::orthographic_rh`. **Not** `orthographic_rh_gl` — one suffix
-apart, and the wrong one gives a scene that is clipped or z-fighting for
-reasons that look like a depth-buffer bug.
+glam groups projections by graphics-API convention, and the obvious choice is
+the wrong one:
 
-Pinned by tests in `camera.rs` (`orthographic_rh_matches_wgpu_depth_range`,
-`orthographic_rh_gl_is_the_wrong_one`, `positive_y_is_up_in_clip_space`) so a
-glam upgrade cannot silently swap the convention.
+| glam module | NDC Z | NDC Y | right for wgpu? |
+|---|---|---|---|
+| `opengl` | `-1..1` | up | no — wrong depth range |
+| `vulkan` | `0..1` | **down** | no — renders upside down |
+| `directx` | `0..1` | up | **yes** |
+
+Use `glam::camera::rh::proj::directx::orthographic`. `vulkan` is the tempting
+wrong answer: it shares wgpu's depth range, and "Vulkan" sounds like the modern
+choice, but it flips Y — so the world renders upside down while every depth
+test still passes. glam's own doc on the `directx` one reads *"for use with
+DirectX and WebGPU"*.
+
+Re-exported as `island_core::orthographic_projection` so exactly one place in
+the codebase makes this choice.
+
+Pinned by tests in `camera.rs` — `orthographic_projection_matches_wgpu_depth_range`,
+`opengl_projection_is_the_wrong_one`, `vulkan_projection_flips_y_and_is_also_wrong`,
+`positive_y_is_up_in_clip_space` — so a glam upgrade cannot silently swap the
+convention.
+
+Note `Mat4::orthographic_rh` and `orthographic_rh_gl` are **deprecated** as of
+glam 0.33 in favour of the modules above.
 
 ## Triangle winding
 

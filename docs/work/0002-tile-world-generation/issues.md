@@ -180,21 +180,37 @@ tell was that `A2` said "render" while group A produces no renderer.
 
 ---
 
-## 8. `RESOLVED` — glam has two orthographic projections one suffix apart
+## 8. `RESOLVED` — glam's projection API, and the trap in its naming
 
-**Symptom:** not a failure — caught while writing the conventions down rather
-than after a scene rendered wrong.
+**Symptom:** first noticed while writing the conventions down; then `cargo
+test` in group B reported `Mat4::orthographic_rh` and `orthographic_rh_gl` are
+**deprecated** in glam 0.33, which `clippy -D warnings` rejects outright.
 
-**Cause:** `Mat4::orthographic_rh` and `Mat4::orthographic_rh_gl` differ only in
-depth range. wgpu clip space is `0..1`; OpenGL's is `-1..1`. Picking the GL
-variant gives a scene that is clipped or z-fights, and the symptom points at
-the depth buffer rather than at the projection matrix.
+**Cause and correction.** The replacement groups projections by graphics-API
+convention, and the intuitive pick is wrong:
 
-**Resolution:** verified empirically instead of trusting the naming, and pinned
-with three tests in `camera.rs` — near maps to 0 and far to 1 under
-`orthographic_rh`, the GL variant maps near to -1, and +Y is up in clip space.
-A glam upgrade that changed the convention would now fail the build rather than
-change the picture.
+| glam module | NDC Z | NDC Y | right for wgpu? |
+|---|---|---|---|
+| `opengl` | `-1..1` | up | no — wrong depth range |
+| `vulkan` | `0..1` | **down** | no — renders upside down |
+| `directx` | `0..1` | up | **yes** |
+
+`vulkan` is the trap. It shares wgpu's depth range, and "Vulkan" reads as the
+modern choice next to "DirectX", but it flips Y — so the world renders upside
+down while every depth test still passes and nothing errors. glam's own doc
+comment on the `directx` one says *"for use with DirectX and WebGPU"*.
+
+**Resolution:** `glam::camera::rh::proj::directx::orthographic`, aliased as
+`island_core::orthographic_projection` so exactly one place makes the choice.
+Pinned by four tests: the chosen projection maps near→0 and far→1, the OpenGL
+one maps near→-1, the Vulkan one maps +Y **down** while ours maps it up, and
++Y is up in clip space.
+
+**Worth noting:** group A's original two tests would have passed just as
+happily with the `vulkan` projection, since both put depth in `0..1`. The test
+that actually distinguishes them only got written because the deprecation
+forced a look at the API. A test can be true and still not be the test you
+needed.
 
 ---
 
@@ -217,3 +233,44 @@ cause looks like a mesher regression.
 **Resolution:** `F4` must set `cull_mode: Some(Face::Back)` explicitly, and
 should do so from the first version rather than adding it once terrain looks
 right. Recorded in `docs/architecture/coordinates.md`.
+
+---
+
+## 10. `RESOLVED` — a world sized in tiles can be misaligned to chunks
+
+**Symptom:** none — designed out rather than hit.
+
+**Cause:** the obvious constructor is `TileMap::new(width_tiles, depth_tiles)`,
+which permits sizes that are not multiples of `CHUNK_SIZE`. Every partial chunk
+then becomes an edge case in the mesher, the culler, and any future save
+format — each of which has to defend against it independently, and any one of
+which can forget.
+
+**Resolution:** `TileMap::new` takes the size in **chunks**, and derives tiles
+from it. A misaligned world is now unrepresentable, so no downstream code has
+to handle one.
+
+Preferred over validating tile counts and returning an error: an error still
+means every caller has a failure path to think about, whereas this removes the
+state from the type.
+
+---
+
+## 11. `OPEN` — `HEIGHT_STEP` is 1.0 and probably too coarse
+
+**Symptom:** not yet visible; recorded now because the value is easy to change
+today and will be load-bearing once terrain is generated.
+
+**Cause:** heights are stored as `i16` steps, and `HEIGHT_STEP` converts a step
+to world Y. At `1.0` a one-step cliff is exactly as tall as a tile is wide,
+which is a very blocky, Minecraft-like vertical scale. Real terrain usually
+wants finer vertical granularity than horizontal.
+
+**Why it is separate from tile size at all:** so the vertical scale can be
+retuned without touching stored data, and so it is unambiguous whether a stored
+`5` means five steps or five world units.
+
+**Resolution:** decide from the rendered terrain in group F, alongside the
+camera pitch — both are "looks right" judgements and both are single constants.
+Note that the two interact: a lower camera pitch exaggerates cliff faces, so
+the right `HEIGHT_STEP` depends on the pitch chosen.
