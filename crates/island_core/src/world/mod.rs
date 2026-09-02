@@ -31,9 +31,26 @@ pub const CHUNK_SIZE: u32 = 32;
 /// touching stored data, and makes it unambiguous whether a given `5` means
 /// five steps or five world units.
 ///
-/// At `1.0` a cliff one step high is exactly as tall as a tile is wide, which
-/// is the blocky look the stepped-terrain decision implies.
-pub const HEIGHT_STEP: f32 = 1.0;
+/// **Chosen from rendered comparisons at 1.0, 2.0 and 3.0** (unit `0002`,
+/// group F), not from a table:
+///
+/// - `1.0` — a step is as tall as a tile is wide. Reads as a coloured *map*.
+///   Cliff faces are present and correctly lit but too shallow to see, so the
+///   terrain looks flat despite being fully three-dimensional.
+/// - `2.0` — reads as terraced landscape. Cliffs are unmistakable, mountain
+///   shapes are legible, and almost nothing is hidden behind them.
+/// - `3.0` — dramatic, but cliffs grow tall enough to **occlude the ground
+///   behind them**, which is a genuine problem for a top-down game where the
+///   hidden ground is playable space.
+///
+/// # Gameplay consequence, deliberately accepted
+///
+/// At 2.0 a terrace is two world units — taller than a person. Every height
+/// change is therefore a **barrier** rather than a step up, so movement has to
+/// route around cliffs or find a slope. That suits a survival map (natural
+/// boundaries, defensible ground) but it is a design commitment, not just a
+/// visual one.
+pub const HEIGHT_STEP: f32 = 2.0;
 
 /// A tile's integer position on the ground plane.
 ///

@@ -1,6 +1,6 @@
 # 0002 — Tile World Generation
 
-**Status:** `[~]` in progress — groups A–E complete; F/G (render it) remain
+**Status:** `[~]` in progress — groups A–F complete; G (shell + smoke test) remains
 **Depends on:** `0001-hello-world-entrypoint` (complete)
 **Goal:** Generate a deterministic, seeded tile world with terrain elevation and
 render it — replacing the hello triangle with something that is actually the
@@ -260,25 +260,48 @@ data dominates. Not worth doing without a reason.
 
 ### F. Renderer — `island_core::renderer`
 
-- [ ] `F1` **Depth buffer.** `Depth32Float` texture, created with the surface
+- [x] `F1` **Depth buffer.** `Depth32Float` texture, created with the surface
       and **recreated on resize**. Forgetting the recreate is the classic bug:
       it works until the window changes size, then renders through geometry.
       `Renderer::resize` currently only reconfigures the surface.
-- [ ] `F2` `camera.rs`: orthographic projection with fixed pitch and yaw, a
+- [x] `F2` `camera.rs`: orthographic projection with fixed pitch and yaw, a
       settable focus point, and a settable vertical extent (zoom). Uploads a
       view-projection matrix as a uniform. Fixed orientation means the matrix
       only changes when the focus or zoom does.
-- [ ] `F3` `terrain.wgsl`: transform by view-projection, flat directional
+- [x] `F3` `terrain.wgsl`: transform by view-projection, flat directional
       light against the vertex normal plus a small ambient term. Shading is
       what makes elevation legible — an unlit heightmap of flat colours reads
       as noise.
-- [ ] `F4` Terrain pipeline with depth testing enabled, `LessEqual`, and back
+- [x] `F4` Terrain pipeline with depth testing enabled, `LessEqual`, and back
       face culling. Draw one call per visible chunk.
-- [ ] `F5` Per-chunk frustum culling. With a fixed camera this is a cheap
+- [x] `F5` Per-chunk frustum culling. With a fixed camera this is a cheap
       AABB test, and it validates that the chunk decomposition in `B3` is
       actually good for something.
-- [ ] `F6` Decide the hello triangle's fate: keep it behind a debug flag as a
+- [x] `F6` Decide the hello triangle's fate: keep it behind a debug flag as a
       known-good pipeline to fall back on, or delete it. Record which and why.
+
+      **Deleted.** It existed to prove the Rust → wasm → worker → wgpu path,
+      and the terrain pipeline now exercises strictly more of it — same
+      surface, same device, plus vertex buffers, a depth buffer and culling.
+      Keeping it would mean maintaining a shader, a uniform struct and a
+      pipeline that nothing runs. Its WGSL-validation test pattern moved to
+      `terrain.wgsl`, which is the part that was actually worth keeping. Git
+      has it if it is ever wanted.
+
+**`A2` closed — camera pitch is 30°.** Decided from rendered comparisons of
+one seed at 30°, 45° and 60°, as the task asked. Cliff faces are clearly
+legible at 30° and have nearly vanished by 60°, exactly as `cos θ` predicts —
+and cliff faces are what make a stepped heightmap read as terrain at all. 30°
+also matches the Mad Island reference and costs an upright billboard 13% of its
+height rather than 50%.
+
+**`issues.md` §11 closed — `HEIGHT_STEP` is 2.0**, from comparisons at 1.0,
+2.0 and 3.0. At 1.0 the terrain reads as a coloured *map*: the cliffs are there
+and correctly lit, just too shallow to see. At 3.0 they grow tall enough to
+occlude the ground behind them, which hides playable space. 2.0 reads as
+terraced landscape with almost nothing hidden. **This is a design commitment,
+not only a visual one** — a two-unit terrace is taller than a person, so every
+height change is a barrier to route around rather than a step up.
 
 ### G. Web integration
 

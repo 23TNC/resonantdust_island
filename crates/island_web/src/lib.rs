@@ -30,6 +30,7 @@
 
 use std::cell::RefCell;
 
+use island_core::world::{world_hash, WorldParams};
 use island_core::{FrameStatus, HelloReport, Renderer};
 use wasm_bindgen::prelude::*;
 
@@ -42,6 +43,14 @@ struct State {
     /// Timestamp of the first frame, used as t=0.
     epoch_ms: Option<f64>,
     frames: u64,
+    /// Checksum of the generated world, asserted against the native test value
+    /// so a wasm/native divergence in generation cannot pass unnoticed.
+    world_hash: u64,
+    world_tiles: usize,
+    /// Where the automatic camera pan is centred.
+    pan_center: (f32, f32),
+    /// How far the pan travels from centre, in world units.
+    pan_radius: f32,
 }
 
 /// Module init. Runs automatically when the worker instantiates the wasm.
@@ -89,22 +98,51 @@ pub async fn start(canvas: web_sys::OffscreenCanvas) -> Result<JsValue, JsValue>
     // this crate's job; `island_core` stays free of browser types.
     let target = island_core::wgpu::SurfaceTarget::OffscreenCanvas(canvas);
 
-    let renderer = Renderer::new(target, width, height)
+    let mut renderer = Renderer::new(target, width, height)
         .await
         .map_err(|err| JsValue::from_str(&format!("renderer init failed: {err}")))?;
 
+    let params = WorldParams::default();
+    let map = params.generate();
+    let hash = world_hash(&map);
+    let tiles = map.tile_count();
+    log::info!(
+        "generated {}x{} world, seed {}, hash {:#018x}",
+        map.width(),
+        map.depth(),
+        params.seed,
+        hash
+    );
+    renderer.load_world(&map);
+
     let report = renderer.report().clone();
     let (width, height) = renderer.size();
+    let pan_center = (map.width() as f32 * 0.5, map.depth() as f32 * 0.5);
 
     STATE.with_borrow_mut(|state| {
         *state = Some(State {
             renderer,
             epoch_ms: None,
             frames: 0,
+            world_hash: hash,
+            world_tiles: tiles,
+            // Small enough that the view never reaches the world edge: the
+            // camera's own half-width is roughly 44 * aspect, so a radius much
+            // above 24 puts empty space on screen at the extremes of the pan.
+            pan_radius: (map.width() as f32 * 0.09).min(24.0),
+            pan_center,
         });
     });
 
-    report_to_js(&report, width, height)
+    report_to_js(
+        &report,
+        width,
+        height,
+        hash,
+        tiles,
+        map.width(),
+        map.depth(),
+    )
 }
 
 /// Draw one frame.
@@ -123,6 +161,14 @@ pub fn frame(timestamp_ms: f64) {
 
         let epoch = *state.epoch_ms.get_or_insert(timestamp_ms);
         let elapsed = ((timestamp_ms - epoch) / 1000.0) as f32;
+
+        // Drift the camera in a slow circle. There is no input system yet, and
+        // a static view cannot show that the world is larger than one screen.
+        let angle = elapsed * 0.15;
+        state.renderer.set_camera_focus(
+            state.pan_center.0 + angle.cos() * state.pan_radius,
+            state.pan_center.1 + angle.sin() * state.pan_radius,
+        );
 
         if state.renderer.render(elapsed) == FrameStatus::Presented {
             state.frames += 1;
@@ -154,6 +200,57 @@ pub fn frames_presented() -> f64 {
     STATE.with_borrow(|state| state.as_ref().map_or(0, |s| s.frames) as f64)
 }
 
+/// The generated world's checksum, as hex.
+///
+/// A string rather than a number: the hash is 64-bit and JavaScript numbers
+/// lose precision above 2^53, so returning it numerically would corrupt the
+/// value the smoke test is meant to compare exactly.
+#[wasm_bindgen]
+pub fn world_hash_hex() -> String {
+    STATE.with_borrow(|state| {
+        state.as_ref().map_or_else(
+            || "unloaded".to_string(),
+            |s| format!("{:#018x}", s.world_hash),
+        )
+    })
+}
+
+/// Chunks drawn versus total after culling, plus triangles, for the readout.
+#[wasm_bindgen]
+pub fn frame_stats() -> JsValue {
+    STATE.with_borrow(|state| {
+        let obj = js_sys::Object::new();
+        if let Some(state) = state.as_ref() {
+            let stats = state.renderer.stats();
+            let _ = set(&obj, "chunksDrawn", &(stats.chunks_drawn as u32).into());
+            let _ = set(&obj, "chunksTotal", &(stats.chunks_total as u32).into());
+            let _ = set(&obj, "triangles", &(stats.triangles_drawn as u32).into());
+            let _ = set(&obj, "tiles", &(state.world_tiles as u32).into());
+        }
+        obj.into()
+    })
+}
+
+/// Move the camera's focus on the ground plane.
+#[wasm_bindgen]
+pub fn set_camera_focus(x: f32, z: f32) {
+    STATE.with_borrow_mut(|state| {
+        if let Some(state) = state.as_mut() {
+            state.renderer.set_camera_focus(x, z);
+        }
+    });
+}
+
+/// Set the zoom, as half the visible height in world units.
+#[wasm_bindgen]
+pub fn set_camera_zoom(half_height: f32) {
+    STATE.with_borrow_mut(|state| {
+        if let Some(state) = state.as_mut() {
+            state.renderer.set_camera_half_height(half_height);
+        }
+    });
+}
+
 /// Is WebGPU reachable from this global scope?
 ///
 /// Uses `Reflect` rather than typed `web_sys` accessors so the same code works
@@ -180,7 +277,16 @@ fn webgpu_available() -> bool {
 /// its argument. A wasm-bindgen struct is a JS wrapper around a pointer into
 /// wasm memory — it is not structured-cloneable, and would either throw or
 /// arrive as something meaningless on the other side.
-fn report_to_js(report: &HelloReport, width: u32, height: u32) -> Result<JsValue, JsValue> {
+#[allow(clippy::too_many_arguments)]
+fn report_to_js(
+    report: &HelloReport,
+    width: u32,
+    height: u32,
+    world_hash: u64,
+    tiles: usize,
+    world_width: u32,
+    world_depth: u32,
+) -> Result<JsValue, JsValue> {
     let obj = js_sys::Object::new();
     set(&obj, "backend", &report.backend.as_str().into())?;
     set(&obj, "adapterName", &report.adapter_name.as_str().into())?;
@@ -189,6 +295,15 @@ fn report_to_js(report: &HelloReport, width: u32, height: u32) -> Result<JsValue
     set(&obj, "isSoftware", &report.is_software.into())?;
     set(&obj, "width", &width.into())?;
     set(&obj, "height", &height.into())?;
+    // Hex string, not a number: 64 bits does not survive a JS number.
+    set(
+        &obj,
+        "worldHash",
+        &format!("{world_hash:#018x}").as_str().into(),
+    )?;
+    set(&obj, "tiles", &(tiles as u32).into())?;
+    set(&obj, "worldWidth", &world_width.into())?;
+    set(&obj, "worldDepth", &world_depth.into())?;
     Ok(obj.into())
 }
 

@@ -13,8 +13,8 @@ mod camera;
 mod renderer;
 pub mod world;
 
-pub use camera::{orthographic_projection, CAMERA_PITCH_DEGREES, CAMERA_YAW_DEGREES};
-pub use renderer::{FrameStatus, HelloReport, Renderer, RendererError};
+pub use camera::{orthographic_projection, Camera, CAMERA_PITCH_DEGREES, CAMERA_YAW_DEGREES};
+pub use renderer::{FrameStats, FrameStatus, HelloReport, Renderer, RendererError};
 
 /// Re-export of the `wgpu` we were built against.
 ///

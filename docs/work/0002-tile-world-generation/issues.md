@@ -77,7 +77,7 @@ one.
 
 ---
 
-## 3. `ANTICIPATED` — depth buffer not recreated on resize
+## 3. `RESOLVED` — depth buffer not recreated on resize
 
 **Symptom (expected):** everything renders correctly until the window is
 resized, after which geometry draws through other geometry, or the frame is
@@ -87,14 +87,16 @@ garbage, or validation errors appear about attachment dimensions not matching.
 all that was needed with no depth attachment. A depth texture is a separate
 resource of a fixed size and must be recreated to match.
 
-**Planned resolution:** `F1` — create the depth texture alongside the surface
-config and recreate it in `resize`. Worth testing deliberately by resizing the
-browser window, since the automated check runs at one fixed size and would
-never catch it.
+**Resolution:** the depth texture is recreated in `resize`, and in *three*
+other places the plan did not mention — after a `Lost`/`Outdated` swapchain,
+and after a `Suboptimal` frame. Each of those reconfigures the surface, and any
+reconfigure can change its size, so each must recreate the depth view too.
+Recreating it in `resize` alone would have left a subtler version of the same
+bug that only appears after a swapchain loss.
 
 ---
 
-## 4. `ANTICIPATED` — the camera pitch is cheap now and expensive later
+## 4. `RESOLVED` — the camera pitch is cheap now and expensive later
 
 **Symptom:** not a bug. A decision that is nearly free today and very costly
 once sprite art exists.
@@ -103,9 +105,12 @@ once sprite art exists.
 pitch afterwards and every asset is subtly wrong — objects appear to lean, or
 to float above or sink into the ground.
 
-**Planned resolution:** `A2` — render one seed at ~30°, ~45° and ~60°, compare
-screenshots, and commit to a number with the reasoning written down. Decide it
-from evidence while the only thing that has to change is a constant.
+**Resolution: 30°, decided from the pictures.** Rendered one seed at 30°, 45°
+and 60°. Cliff faces are clearly legible at 30° and have nearly vanished by
+60° — exactly what `cos θ` predicts, but far more convincing seen than
+tabulated, because cliff faces are what make a stepped heightmap read as
+terrain rather than as a coloured map. 30° also matches the reference and costs
+an upright billboard 13% of its height against 50% at 60°.
 
 **Also record the convention.** "30 degree pitch" is ambiguous:
 degrees-from-horizontal (side-on) and degrees-from-vertical (top-down) differ by
@@ -303,7 +308,7 @@ state from the type.
 
 ---
 
-## 11. `OPEN` — `HEIGHT_STEP` is 1.0 and probably too coarse
+## 11. `RESOLVED` — `HEIGHT_STEP` was 1.0 and too *fine*, not too coarse
 
 **Symptom:** not yet visible; recorded now because the value is easy to change
 today and will be load-bearing once terrain is generated.
@@ -317,10 +322,28 @@ wants finer vertical granularity than horizontal.
 retuned without touching stored data, and so it is unambiguous whether a stored
 `5` means five steps or five world units.
 
-**Resolution:** decide from the rendered terrain in group F, alongside the
-camera pitch — both are "looks right" judgements and both are single constants.
-Note that the two interact: a lower camera pitch exaggerates cliff faces, so
-the right `HEIGHT_STEP` depends on the pitch chosen.
+**Resolution: 2.0**, from rendered comparisons at 1.0, 2.0 and 3.0.
+
+**The prediction was backwards.** The note above guessed 1.0 was "too blocky"
+and that terrain would want *finer* vertical granularity. The renders showed
+the opposite: at 1.0 the world reads as a flat coloured map. The cliffs are
+there and correctly lit — they are simply too shallow to see, so all the work
+in group E was invisible.
+
+- `1.0` — reads as a map, not terrain.
+- `2.0` — terraced landscape, cliffs unmistakable, mountain shapes legible,
+  almost nothing hidden behind them.
+- `3.0` — dramatic, but cliffs occlude the ground behind them, and that ground
+  is playable space.
+
+**This is a design commitment, not only a visual one.** A two-unit terrace is
+taller than a person, so every height change is a **barrier** to route around
+rather than a step up. That suits a survival map — natural boundaries,
+defensible ground — but movement, pathing and building all inherit it.
+
+Worth noting `HEIGHT_STEP` does **not** affect `world_hash`: heights are stored
+as integer steps and this only scales them at render time. The golden hash was
+unchanged by the switch, which is the separation working as intended.
 
 ---
 
@@ -509,3 +532,32 @@ one way.
 
 **Generalises:** where geometry is emitted by hand-written index order, check
 it by recomputing the geometry, not by reviewing the code.
+
+---
+
+## 18. `RESOLVED` — the canvas resized itself every frame
+
+**Symptom:** the console logged `surface resized to 1678x928`, `…x929`,
+`…x930` — one pixel larger every frame, indefinitely. Every check still
+passed; nothing errored.
+
+**Cause: a feedback loop between wgpu and CSS layout.** wgpu sets
+`canvas.width`/`height` when it configures the surface (`webgpu.rs:4213`). The
+canvas element's *intrinsic* size comes from those attributes, and it was laid
+out with `flex: 1 1 auto` and no explicit height — so its backing size fed into
+the layout, which changed its measured height, which fired the `ResizeObserver`,
+which resized the surface again.
+
+**Why it mattered more than it looked.** Every one of those resizes
+reconfigured the surface *and reallocated the depth texture* — a full-screen
+32-bit texture allocated and thrown away every frame, forever.
+
+**Resolution:** put the canvas in a container and position it
+`absolute; inset: 0`. Its layout size now comes from the container and can
+never come from its own backing store, so the loop cannot form. Resize events
+went from roughly fifteen per second to **one**, at startup.
+
+**The general shape of this:** the canvas is the one element whose rendered
+content can change its own layout. Any layout that lets a canvas size itself
+from its content is a candidate for this loop, and it is invisible unless
+something logs resizes — which is the only reason it was caught here.

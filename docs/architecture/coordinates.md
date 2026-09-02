@@ -78,6 +78,20 @@ care where in the tile it is standing.
 Consequence: **height changes must be meshed as walls.** A heightmap that emits
 only top faces renders as floating plateaus with gaps.
 
+### One step is `HEIGHT_STEP` = 2.0 world units
+
+Chosen from rendered comparisons at 1.0, 2.0 and 3.0. At 1.0 the terrain reads
+as a flat coloured map — the cliffs are there and correctly lit, just too
+shallow to see. At 3.0 they occlude the ground behind them, and that ground is
+playable space.
+
+**A design commitment, not only a visual one.** A two-unit terrace is taller
+than a person, so every height change is a **barrier** to route around rather
+than a step up. Movement, pathing and building all inherit that.
+
+`HEIGHT_STEP` scales stored heights at render time only; it does not affect
+generation or `world_hash`.
+
 ## No tunnels, caves or overhangs
 
 One surface height per `(x, z)` column. This is assumed throughout: the world
@@ -111,9 +125,15 @@ screen. A **high** pitch reads the map clearly but squashes anything upright:
 an upright billboard loses 13% of its height at 30° and **half** of it at 60°,
 which artists must otherwise absorb by pre-stretching every sprite.
 
-**Provisionally 30°**, matching the Mad Island reference and keeping billboard
-squash low. Not final — the committing decision comes from rendered
-comparisons of the same seed once terrain exists, because this is judged by eye.
+**Decided: 30°**, from rendered comparisons of one seed at 30°, 45° and 60°.
+
+Cliff faces are clearly legible at 30° and have nearly vanished by 60° — as
+`cos θ` predicts, but far more convincing seen than tabulated, because cliff
+faces are what make a stepped heightmap read as terrain rather than a coloured
+map. 30° also matches the reference and costs an upright billboard 13% of its
+height against 50% at 60°.
+
+**Settled.** Changing it once sprite art exists invalidates the art.
 
 ### Why fixed
 
