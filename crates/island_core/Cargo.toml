@@ -1,0 +1,18 @@
+[package]
+name = "island_core"
+description = "Engine core: renderer and frame logic. Knows nothing about the browser."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+wgpu.workspace = true
+bytemuck.workspace = true
+log.workspace = true
+thiserror.workspace = true
+
+# naga is already in the tree via wgpu. Depending on it directly lets the WGSL
+# be parsed and validated by `cargo test`, so a shader typo fails here instead
+# of surfacing as a console error in the browser.
+[dev-dependencies]
+naga = { version = "30.0.1", features = ["wgsl-in"] }

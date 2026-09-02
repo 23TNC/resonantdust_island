@@ -247,3 +247,68 @@ Verified in the meantime via the throwaway member described in §8.
 **Consequence for anyone picking this up mid-stream:** between the end of group
 A and the start of group B, `cargo` commands at the repo root will fail with
 the error above. This is expected, not a broken checkout.
+
+---
+
+## 10. `RESOLVED` — wgpu 30 differs substantially from the documented wgpu API
+
+**Symptom:** the renderer, written against the `wgpu` API as it is described in
+essentially all available examples and tutorials, failed to compile with 10
+errors on the first `cargo check`.
+
+**Cause:** almost every wgpu example in circulation targets roughly 0.20–25.
+Version 30 renamed and restructured a lot of the core surface. None of it is
+subtle once seen, but all of it is invisible until the compiler objects.
+
+**The actual differences, for reference:**
+
+| Written from memory / docs | wgpu 30.0.1 |
+|---|---|
+| `Instance::new(&InstanceDescriptor::default())` | `Instance::new(InstanceDescriptor::new_without_display_handle())` — by value, and there is **no** `Default` impl |
+| `surface.get_current_texture() -> Result<_, SurfaceError>` | returns a `CurrentSurfaceTexture` **enum**; `wgpu::SurfaceError` no longer exists |
+| `frame.present()` | `queue.present(frame)` — moved onto `Queue` |
+| `PipelineLayoutDescriptor { push_constant_ranges }` | `{ immediate_size: u32 }` — push constants are now "immediate data" |
+| `bind_group_layouts: &[&BindGroupLayout]` | `&[Option<&BindGroupLayout>]` |
+| `RenderPipelineDescriptor { multiview }` | `{ multiview_mask }` |
+| `RenderPassDescriptor` (5 fields) | also requires `multiview_mask` |
+| `RenderPassColorAttachment { view, resolve_target, ops }` | also requires `depth_slice` |
+| `VertexState { buffers: &[VertexBufferLayout] }` | `&[Option<VertexBufferLayout>]` |
+
+`CurrentSurfaceTexture` has **seven** variants — `Success`, `Suboptimal`,
+`Timeout`, `Occluded`, `Outdated`, `Lost`, `Validation` — and the compiler
+enforces handling all of them. This is an improvement on the old `Result`:
+none of these are conditions the caller can meaningfully propagate, so
+modelling them as errors was always slightly wrong. `Renderer::render` returns
+a `FrameStatus` (`Presented` / `Skipped`) accordingly.
+
+**Resolution:** read the vendored source in
+`~/.cargo/registry/src/*/wgpu-30.0.1/src/api/` rather than trusting recalled or
+online API shapes. That is the authoritative reference for this version, and
+grepping it for `pub struct <Name>` resolves any of these in seconds.
+
+**Carry forward:** when `island_web` (group C) or any later renderer work is
+written, check struct fields against the vendored source first. Expect the same
+class of mismatch in any wgpu example copied from the internet.
+
+---
+
+## 11. `RESOLVED` — WGSL errors were only discoverable in a browser
+
+**Symptom:** not a failure, a gap. `device.create_shader_module` compiles WGSL
+at runtime, so a shader typo would first appear as a console error after a full
+rebuild, redeploy and page load — and on the far side of the WSL/Windows
+boundary at that.
+
+**Resolution:** added `naga` as a direct dev-dependency (it is already in the
+tree via `wgpu`, so this costs nothing) and a `cargo test` that runs the same
+WGSL frontend wgpu uses, parsing and validating `hello.wgsl`. A second test
+asserts the Rust `Uniforms` struct stays 16 bytes, since it is shared with the
+shader by memory layout alone and a size change on either side would silently
+corrupt every field.
+
+Verified the test is not vacuous by deliberately breaking the shader: it fails
+with `error: invalid field accessor ...` and names the line.
+
+**Note:** `wgpu::naga` is re-exported but behind `#[cfg(all(not(wgpu_core),
+naga))]`, so it is not reliably reachable across both targets. Depending on
+`naga` directly avoids the cfg entirely.

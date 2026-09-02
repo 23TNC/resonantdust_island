@@ -1,6 +1,6 @@
 # 0001 — Hello World Entrypoint
 
-**Status:** `[~]` in progress — group A complete
+**Status:** `[~]` in progress — groups A and B complete
 **Goal:** Stand up the smallest end-to-end slice of the real architecture: a
 Rust program compiled to WebAssembly, running inside a Web Worker, driving
 `wgpu` against a real GPU through WebGPU, drawing to an `OffscreenCanvas` on
@@ -94,9 +94,9 @@ wrinkle.
 
 ### B. `island_core` — the engine crate
 
-- [ ] `B1` Create `crates/island_core` as a normal `lib` crate. Dependencies:
+- [x] `B1` Create `crates/island_core` as a normal `lib` crate. Dependencies:
       `wgpu`, `log`, `bytemuck`, `thiserror`.
-- [ ] `B2` Write `renderer.rs`:
+- [x] `B2` Write `renderer.rs`:
       - `Renderer::new(target: impl Into<wgpu::SurfaceTarget<'static>>, width, height)`
         — async. Requests an adapter with
         `PowerPreference::HighPerformance`, requests a device, configures the
@@ -107,13 +107,24 @@ wrinkle.
       - `Renderer::render(&mut self, t: f32)` — acquire frame, begin a render
         pass with a clear colour, draw the triangle, submit, present.
       - `Renderer::resize(&mut self, w, h)` — reconfigure the surface.
-- [ ] `B3` Write `hello.wgsl`: a vertex shader that generates a full-ish
+- [x] `B3` Write `hello.wgsl`: a vertex shader that generates a full-ish
       triangle from `@builtin(vertex_index)` (no vertex buffer needed) and a
       fragment shader that colours it. Feed a `f32` time through a small
       uniform buffer so the triangle visibly animates — a still image cannot
-      distinguish "rendered once" from "loop is running".
-- [ ] `B4` `lib.rs` re-exports `Renderer` and a `HelloReport` struct
-      (`backend`, `adapter_name`, `is_software`) that the shell can display.
+      distinguish "rendered once" from "loop is running". The triangle both
+      spins and cycles colour, and is aspect-corrected so it stays equilateral.
+- [x] `B4` `lib.rs` re-exports `Renderer` and a `HelloReport` struct
+      (`backend`, `adapter_name`, `device_type`, `driver`, `is_software`) that
+      the shell can display.
+- [x] `B5` *(added)* Validate the WGSL in `cargo test` via a direct `naga`
+      dev-dependency, plus a test asserting the uniform struct stays 16 bytes.
+      Without this a shader typo is only discoverable by loading the page in a
+      browser. Confirmed the test fails on a deliberately broken shader.
+
+**Verified:** `cargo check` passes for **both** `wasm32-unknown-unknown` and
+native — the platform-agnostic seam is real, not aspirational. `cargo clippy
+-- -D warnings` is clean and `cargo test` passes 2/2. See `issues.md` §10 for
+the wgpu 30 API differences hit along the way.
 
 ### C. `island_web` — the wasm entrypoint
 
