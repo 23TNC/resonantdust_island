@@ -31,6 +31,13 @@ An issue that is resolved stays in the file with its resolution attached. An
 issue that is not resolved stays open at the top and is carried into the next
 unit of work if it still matters.
 
+## Index
+
+| Unit | Status |
+|---|---|
+| `0001-hello-world-entrypoint` | complete — Rust/wasm/worker/wgpu verified on a real GPU |
+| `0002-tile-world-generation`  | planned |
+
 ## Status vocabulary
 
 - `[ ]` not started
