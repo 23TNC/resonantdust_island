@@ -247,6 +247,12 @@ rock 16.0% / snow 2.0%, `world_hash = 0xd34bfa9b078f3806`. That hash is what
 | **total** | **14.56 MiB** |
 | largest chunk | 6,192 vertices |
 
+These are **startup** costs — `mesh_world` runs once and the buffers are then
+just drawn. The recurring cost is re-meshing after a terrain edit, measured
+separately at **38 µs per chunk** (77 µs for an edit on a chunk border, 154 µs
+on a corner, against a 16,667 µs frame budget) — so editing can re-mesh
+synchronously without a job system.
+
 Comfortable. Walls cost far less than feared because real terrain is mostly
 flat locally. Also note the largest chunk is well under `u16::MAX`, so 16-bit
 indices are viable — but they would save only 1.04 MiB of 14.56, since vertex

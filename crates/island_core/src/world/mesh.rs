@@ -556,5 +556,28 @@ mod measure {
             "largest chunk {largest} vertices  (u16 index limit is {})",
             u16::MAX
         );
+
+        // The cost that actually recurs: re-meshing after a terrain edit.
+        // mesh_world is a startup cost paid once; this is the one a digging or
+        // building system pays, and it is per-chunk rather than per-world.
+        const REPS: u32 = 200;
+        let chunk = ChunkPos::new(4, 4);
+        let t2 = Instant::now();
+        for _ in 0..REPS {
+            std::hint::black_box(mesh_chunk(&map, std::hint::black_box(chunk)));
+        }
+        let per_chunk_us = t2.elapsed().as_secs_f64() * 1e6 / f64::from(REPS);
+        println!();
+        println!("re-mesh 1 chunk    {per_chunk_us:.0} us");
+        println!("  edit mid-chunk   {per_chunk_us:.0} us   (1 chunk)");
+        println!(
+            "  edit on a border {:.0} us   (2 chunks)",
+            per_chunk_us * 2.0
+        );
+        println!(
+            "  edit on a corner {:.0} us   (4 chunks)",
+            per_chunk_us * 4.0
+        );
+        println!("  frame budget     16667 us  (60 fps)");
     }
 }

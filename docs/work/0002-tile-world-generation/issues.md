@@ -163,6 +163,27 @@ top". Actual output is **1.39 quads per tile** — real terrain is mostly flat
 worst case of five faces per tile only happens where every tile differs from
 all four neighbours, which noise-based terrain essentially never does.
 
+**These are startup costs, not per-frame costs.** `mesh_world` runs once; the
+resulting buffers are uploaded and then simply drawn each frame. The cost that
+*recurs* is re-meshing after a terrain edit, and it is per-chunk:
+
+```
+re-mesh 1 chunk    38 us
+  edit mid-chunk   38 us   (1 chunk)
+  edit on a border 77 us   (2 chunks, meshes read across borders)
+  edit on a corner 154 us  (4 chunks)
+  frame budget  16,667 us  (60 fps)
+```
+
+So a terrain edit costs well under 1% of a frame even in the worst case, which
+means digging and building can re-mesh synchronously without a job system.
+Recorded now because that conclusion is what a later editing unit needs, and
+it is much cheaper to measure here than to assume there.
+
+**Not yet measured in wasm.** These are native release numbers; wasm is
+typically somewhat slower for this kind of scalar work. Group `G` is where the
+browser figure gets taken.
+
 **No action taken.** Two levers were noted and both are declined for now:
 
 - **16-bit indices.** Viable — the largest chunk is 6,192 vertices, far under
