@@ -126,11 +126,27 @@ await init({ module_or_path: wasmUrl })
 ```
 This is deterministic and does not depend on the rewrite.
 
-**Status:** open until `E5` is done. **Premise confirmed (group C):** the
+**Status:** `RESOLVED` — see the outcome at the end of this entry.
+**Premise confirmed (group C):** the
 generated glue does exactly this — `island_web.js` line ~1579 reads
 `module_or_path = new URL('island_web_bg.wasm', import.meta.url)` when called
 with no argument, and accepts an explicit URL otherwise. So the documented
 fallback is available and known to work.
+
+**Outcome (group E):** avoided rather than risked. `worker.ts` imports the wasm
+with Vite's `?url` suffix and hands the result to `init()`, so nothing depends
+on Vite rewriting `import.meta.url` inside a worker bundle:
+
+```ts
+import wasmUrl from './generated/island_web_bg.wasm?url'
+await init({ module_or_path: wasmUrl })
+```
+
+Verified in both modes. Dev resolves the import to a module exporting
+`"/src/generated/island_web_bg.wasm"`, which the server returns as
+`application/wasm` — the MIME type matters, since `instantiateStreaming`
+rejects anything else. Production emits a hashed
+`dist/assets/island_web_bg-CNEVcxIi.wasm`.
 
 ---
 
@@ -390,3 +406,45 @@ agree by hand — worth a comment on both sides.
 **General rule for later work:** anything crossing a `postMessage` boundary
 must be structured-cloneable. This will come up again the moment game state is
 shared between the worker and the main thread.
+
+---
+
+## 15. `RESOLVED` — a doc comment silently broke the TypeScript parser
+
+**Symptom:** `tsc --noEmit` failed in `protocol.ts` with five cascading errors
+starting `TS1127: Invalid character`, pointing at a line that looked fine.
+
+**Cause:** the comment referenced the issues file by glob —
+`docs/work/0001-*/issues.md` — and the `*/` in that path closed the enclosing
+block comment early. Everything after it parsed as code.
+
+**Resolution:** write the path out in full in TypeScript comments. Harmless in
+Rust, where these references are `//` line comments, which is why the same text
+survived groups B and C without complaint.
+
+Worth knowing because the error message points at the *next* line and says
+nothing about comments, so it reads as a mysterious encoding problem.
+
+---
+
+## 16. `RESOLVED` — build and shell verified; nothing has been *run* yet
+
+Recorded to keep the distinction sharp before group F.
+
+Everything demonstrated in groups D and E is **build-time** evidence:
+
+| Check | Result |
+|---|---|
+| `scripts/build-wasm.sh` from clean | release build 33s, 292 KB wasm |
+| `tsc --noEmit` under `strict` | clean |
+| `vite build` | worker chunk 30 KB, wasm asset 296 KB (86.7 KB gzip) |
+| dev server serves `index.html` | 200 |
+| dev server serves `boot.ts` / `worker.ts` | 200, `text/javascript` |
+| dev server serves the `.wasm` | 200, **`application/wasm`** |
+| `?url` import resolves | dev and production both correct |
+
+None of this proves WebGPU initialises, that an adapter exists, that the
+shader runs, or that a single frame is drawn. The first genuine end-to-end
+signal comes from loading the page in Windows Chrome — group F. Anticipated
+issues §1 (secure context) and §6 (software adapter) are still open and are
+the two most likely to bite there.

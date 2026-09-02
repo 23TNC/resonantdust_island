@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Resonant Dust Island — hello world</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07080f;
+        --panel: #11141f;
+        --line: #232838;
+        --text: #c8cee0;
+        --dim: #6d7590;
+        --ok: #5ad19a;
+        --warn: #e8b84b;
+        --err: #f2726f;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      header {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+      header span { color: var(--dim); font-size: 12px; }
+
+      /* The canvas fills the remaining height. Its CSS size drives the
+         physical size boot.ts computes and hands to the worker. */
+      #viewport {
+        flex: 1 1 auto;
+        width: 100%;
+        min-height: 240px;
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel);
+      }
+
+      #status {
+        margin: 0;
+        padding: 12px 14px;
+        white-space: pre-wrap;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-left-width: 3px;
+        border-radius: 6px;
+        color: var(--dim);
+        font-size: 13px;
+      }
+      #status[data-state='ok']       { border-left-color: var(--ok);   color: var(--text); }
+      #status[data-state='software'] { border-left-color: var(--warn); color: var(--warn); }
+      #status[data-state='error']    { border-left-color: var(--err);  color: var(--err); }
+
+      noscript { color: var(--err); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Resonant Dust Island</h1>
+      <span>hello world &middot; rust + wgpu in a web worker</span>
+    </header>
+
+    <canvas id="viewport"></canvas>
+
+    <!-- boot.ts fills this in with the adapter report, or with the reason
+         booting failed. Failures land here rather than only in devtools: the
+         browser under test runs on Windows while the code lives in WSL, so
+         "check the console" costs more than it looks like it does. -->
+    <pre id="status">booting…</pre>
+
+    <noscript>
+      This page needs JavaScript: the game is a WebAssembly module running in a
+      Web Worker.
+    </noscript>
+
+    <script type="module" src="/src/boot.ts"></script>
+  </body>
+</html>

@@ -1,6 +1,7 @@
 # 0001 — Hello World Entrypoint
 
-**Status:** `[~]` in progress — groups A, B and C complete
+**Status:** `[~]` in progress — groups A–E complete; only F/G (run it
+on Windows) remain
 **Goal:** Stand up the smallest end-to-end slice of the real architecture: a
 Rust program compiled to WebAssembly, running inside a Web Worker, driving
 `wgpu` against a real GPU through WebGPU, drawing to an `OffscreenCanvas` on
@@ -174,7 +175,7 @@ five expected exports.
 
 ### D. Build pipeline
 
-- [ ] `D1` `scripts/build-wasm.sh`:
+- [x] `D1` `scripts/build-wasm.sh`:
       ```
       cargo build -p island_web --target wasm32-unknown-unknown --release
       wasm-bindgen --target web --out-dir web/src/generated \
@@ -182,19 +183,28 @@ five expected exports.
       ```
       Accept a `--debug` flag that swaps `--release` for a debug build and adds
       `--keep-debug` to `wasm-bindgen`.
-- [ ] `D2` Add `set -euo pipefail` and make the script runnable from any cwd
+- [x] `D2` Add `set -euo pipefail` and make the script runnable from any cwd
       (resolve paths relative to the script location).
+- [x] `D3` *(added)* The script compares the `wasm-bindgen` pin in `Cargo.toml`
+      against the CLI on `PATH` and fails immediately with the exact
+      `cargo install` line to fix it. Anticipated issue §2 would otherwise
+      surface as a wall of text at the end of a slow build.
+- [x] `D4` *(added)* `scripts/dev.sh` — build the wasm, `npm install` if
+      needed, start Vite. Carries the localhost-not-IP warning in its header.
+
+**Verified:** `scripts/build-wasm.sh` runs clean from scratch — release build
+in 33s, producing a **292 KB** `.wasm` (86.7 KB gzipped).
 
 ### E. The TypeScript shell
 
-- [ ] `E1` `web/package.json` — dev dependencies `vite` and `typescript` only.
+- [x] `E1` `web/package.json` — dev dependencies `vite` and `typescript` only.
       Scripts: `dev`, `build`, `preview`.
-- [ ] `E2` `web/vite.config.ts` — `server.host = true` so the dev server binds
+- [x] `E2` `web/vite.config.ts` — `server.host = true` so the dev server binds
       `0.0.0.0` and is reachable from Windows; `server.port = 5173`.
-- [ ] `E3` `web/index.html` — a `<canvas id="viewport">`, a `<pre id="status">`
+- [x] `E3` `web/index.html` — a `<canvas id="viewport">`, a `<pre id="status">`
       for the adapter report, and a module script tag loading `boot.ts`.
       Include a `no-JS`/`no-worker` fallback message.
-- [ ] `E4` `web/src/boot.ts`:
+- [x] `E4` `web/src/boot.ts`:
       - Size the canvas to the device pixel ratio.
       - `new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })`
         — the `new URL` form is what lets Vite bundle the worker.
@@ -206,7 +216,7 @@ five expected exports.
         is the point of including a loop in a "hello world".
       - `ResizeObserver` posting `{ type: 'resize', w, h }`.
       - Render the `ready` message from the worker into `#status`.
-- [ ] `E5` `web/src/worker.ts`:
+- [x] `E5` `web/src/worker.ts`:
       - `import init, { start, frame, resize } from './generated/island_web.js'`
       - On `init` message: `await init()`, `await start(canvas)`, post the
         report back as `{ type: 'ready', report }`.
@@ -214,8 +224,20 @@ five expected exports.
         before `start()` resolves.
       - Wrap the boot in try/catch and post `{ type: 'error', message }` so a
         failure is visible on the page rather than only in devtools.
-- [ ] `E6` `web/tsconfig.json` — `"lib": ["ES2022", "DOM", "WebWorker"]`,
+- [x] `E6` `web/tsconfig.json` — `"lib": ["ES2022", "DOM", "WebWorker"]`,
       `"types": ["vite/client"]`, strict on.
+- [x] `E7` *(added)* `web/src/protocol.ts` — the message types, imported by
+      both sides so a change to one is a compile error in the other. Also home
+      to the `GpuReport` interface that must match `report_to_js` by hand (see
+      `issues.md` §14).
+
+**Verified:** `tsc --noEmit` clean under `strict`; `vite build` emits the
+worker as its own chunk and the wasm as a separate 296 KB asset; the dev server
+serves `index.html`, both TS entrypoints, and the `.wasm` with the correct
+`application/wasm` MIME type. Installed versions: vite 7.3.6, typescript 5.9.3.
+
+**Not yet verified:** that any of it *runs*. Everything above is build-time
+evidence. Whether WebGPU actually initialises is exactly what group F tests.
 
 ### F. Run it on Windows
 
@@ -307,10 +329,12 @@ Named so they do not creep in:
 - ~~**Which `wgpu` version?**~~ **ANSWERED (group A):** `wgpu 30.0.1` resolves
   and compiles against `wasm-bindgen =0.2.127`, matching the installed CLI. No
   CLI upgrade needed. Versions recorded in `issues.md` §8.
-- **Does Vite resolve the wasm asset correctly inside a module worker?**
-  `wasm-bindgen --target web` glue locates the `.wasm` via
-  `new URL('island_web_bg.wasm', import.meta.url)`. If Vite mangles that in the
-  worker bundle, the fallback is to pass an explicit URL to `init()`.
+- ~~**Does Vite resolve the wasm asset correctly inside a module worker?**~~
+  **ANSWERED (group E):** sidestepped rather than tested — `worker.ts` imports
+  the wasm with Vite's `?url` suffix and passes the result to `init()`
+  explicitly, so nothing depends on the glue's `import.meta.url` fallback being
+  rewritten correctly. Confirmed working in both modes: dev resolves to
+  `/src/generated/island_web_bg.wasm`, production to a hashed asset.
 - **`shared-array-buffer` / cross-origin isolation?** Not needed now (no
   threads), but if `wgpu` or a future `rayon`-style thread pool needs it, the
   dev server will need COOP/COEP headers. Note whether the answer is yes now so

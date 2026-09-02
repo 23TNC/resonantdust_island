@@ -1,0 +1,17 @@
+{
+  "name": "resonantdust-island-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Boot shell for the Resonant Dust Island wasm game. Contains no game logic.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.1.7"
+  }
+}
