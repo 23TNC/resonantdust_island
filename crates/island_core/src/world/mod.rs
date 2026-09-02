@@ -5,10 +5,12 @@
 //! origin is its horizontal centre at ground height.
 
 mod generate;
+mod mesh;
 mod noise;
 mod tile;
 
 pub use generate::{world_hash, WorldParams};
+pub use mesh::{mesh_chunk, mesh_world, ChunkMesh, Vertex};
 pub use noise::{hash_2d, hash_to_unit, value_noise_2d, Fbm};
 pub use tile::TileKind;
 

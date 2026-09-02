@@ -1,6 +1,6 @@
 # 0002 — Tile World Generation
 
-**Status:** `[~]` in progress — groups A–D complete
+**Status:** `[~]` in progress — groups A–E complete; F/G (render it) remain
 **Depends on:** `0001-hello-world-entrypoint` (complete)
 **Goal:** Generate a deterministic, seeded tile world with terrain elevation and
 render it — replacing the hello triangle with something that is actually the
@@ -208,22 +208,49 @@ rock 16.0% / snow 2.0%, `world_hash = 0xd34bfa9b078f3806`. That hash is what
 
 ### E. Meshing — `island_core::world::mesh`
 
-- [ ] `E1` `Vertex { position: [f32;3], normal: [f32;3], color: [f32;3] }`,
+- [x] `E1` `Vertex { position: [f32;3], normal: [f32;3], color: [f32;3] }`,
       `Pod`/`Zeroable`. Per-vertex colour rather than a texture: the asset
       pipeline is out of scope, and colour is enough to read the terrain.
-- [ ] `E2` Top face per tile: one flat quad at the tile's height, normal `+Y`.
-- [ ] `E3` **Side walls where a neighbour is lower.** Without these the world
+- [x] `E2` Top face per tile: one flat quad at the tile's height, normal `+Y`.
+- [x] `E3` **Side walls where a neighbour is lower.** Without these the world
       is a set of floating plateaus with holes at every height change — the
       single most likely way for this to look broken. Walls are what make a
       heightmap read as terrain. Emit only the faces that are actually exposed;
       a wall between two equal-height tiles is wasted geometry.
-- [ ] `E4` World-edge walls dropped to a skirt height, so the world does not
+- [x] `E4` World-edge walls dropped to a skirt height, so the world does not
       appear to float.
-- [ ] `E5` One vertex/index buffer per chunk, built on the CPU, uploaded once.
-- [ ] `E6` Tests: a flat chunk emits exactly `CHUNK_SIZE²` quads and no walls;
+- [x] `E5` One vertex/index buffer per chunk, built on the CPU, uploaded once.
+- [x] `E6` Tests: a flat chunk emits exactly `CHUNK_SIZE²` quads and no walls;
       a single raised tile emits four walls; a chunk at the world edge emits
       its skirt. Vertex and index counts asserted exactly — cheap tests that
       catch most meshing regressions.
+- [x] `E7` *(added)* `every_triangle_winding_matches_its_normal` — recomputes
+      the geometric normal of all 180k emitted triangles and checks it agrees
+      with the stored one. The four wall corner orders are hand-derived, and a
+      quad wound backwards is not subtly wrong but **invisible**, from exactly
+      the side you were looking from. All four were correct first time; without
+      this test that would have been luck rather than knowledge.
+- [x] `E8` *(added)* `measure_mesh` diagnostic, answering `issues.md` §6 and
+      `H3` with numbers instead of estimates.
+
+**Measured** (default 256×256 world, release):
+
+| | |
+|---|---|
+| generate | 7.0 ms |
+| mesh | 11.3 ms |
+| quads | 90,892 (**1.39 per tile**, vs 5 worst case) |
+| triangles | 181,784 |
+| vertices | 363,568 |
+| vertex data | 12.48 MiB (36 B/vertex) |
+| index data | 2.08 MiB (u32) |
+| **total** | **14.56 MiB** |
+| largest chunk | 6,192 vertices |
+
+Comfortable. Walls cost far less than feared because real terrain is mostly
+flat locally. Also note the largest chunk is well under `u16::MAX`, so 16-bit
+indices are viable — but they would save only 1.04 MiB of 14.56, since vertex
+data dominates. Not worth doing without a reason.
 
 ### F. Renderer — `island_core::renderer`
 

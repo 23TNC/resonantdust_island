@@ -130,7 +130,7 @@ specifics already worth remembering from `0001`:
 
 ---
 
-## 6. `ANTICIPATED` — mesh upload cost at world scale
+## 6. `RESOLVED` — mesh upload cost at world scale
 
 **Symptom (expected):** generation is instant but the first frame takes a
 visible pause, or memory is far higher than expected.
@@ -140,11 +140,37 @@ vertices between tiles — each needs its own normal and colour — so that is
 ~262k vertices for top faces alone, before walls. At 36 bytes per vertex that
 is roughly 9 MB of vertex data, plus indices, plus walls.
 
-**Planned resolution:** measure rather than guess (`H3`). Chunking already
-bounds any single upload. If it is a problem, the levers are a smaller world, a
-larger chunk size to cut per-buffer overhead, or packing the vertex format
-(normals as a face index, colour as a palette index) — but none of that should
-happen before there is a number showing it is needed.
+**Planned resolution:** measure rather than guess (`H3`).
+
+**Measured (group E), default 256×256 world, release build:**
+
+```
+generate      7.0 ms
+mesh         11.3 ms
+quads        90,892   (1.39 per tile; theoretical max is 5)
+triangles    181,784
+vertices     363,568
+vertex data  12.48 MiB  (36 B/vertex)
+index data    2.08 MiB  (u32)
+total        14.56 MiB
+largest chunk 6,192 vertices
+```
+
+**Comfortable, and the estimate was pessimistic in an instructive way.** The
+prediction assumed roughly four vertices per tile for top faces plus "walls on
+top". Actual output is **1.39 quads per tile** — real terrain is mostly flat
+*locally*, so most neighbours are at equal height and emit no wall at all. The
+worst case of five faces per tile only happens where every tile differs from
+all four neighbours, which noise-based terrain essentially never does.
+
+**No action taken.** Two levers were noted and both are declined for now:
+
+- **16-bit indices.** Viable — the largest chunk is 6,192 vertices, far under
+  `u16::MAX`, and indices are chunk-local. But it saves 1.04 MiB of 14.56,
+  because vertex data dominates. Not worth the constraint.
+- **Packing the vertex format.** The real lever: 36 B/vertex could become ~16
+  by storing the normal as a face index and the colour as a palette index. A
+  meaningful change to make when there is a reason, and there is not one yet.
 
 ---
 
@@ -431,3 +457,34 @@ by the clamp.
 
 Now unconditional: heights lie within `min..=max` for any parameters, equal or
 inverted included, and both cases have tests.
+
+---
+
+## 17. `RESOLVED` — hand-derived winding is unverifiable by inspection
+
+**Symptom:** none. Recorded because the absence of a symptom was the danger.
+
+**Cause:** the mesher emits five distinct face orientations — one top face and
+four wall directions — and each needs its corners in counter-clockwise order
+*as seen from its own normal*. Those orderings were derived by hand from cross
+products. With back-face culling on, a quad wound the wrong way does not look
+wrong; it is **invisible**, and specifically invisible from the side you were
+trying to look at. Terrain would appear to have holes in one direction only,
+which reads as a generation fault rather than a winding one.
+
+Worse, the natural tests do not catch it: quad counts, vertex counts, index
+ranges and skirt depth are all identical whichever way a face is wound.
+
+**Resolution:** `every_triangle_winding_matches_its_normal` recomputes the
+geometric normal of every emitted triangle from its own vertex positions and
+asserts it agrees with the normal stored on those vertices. Runs over a
+generated 3×3-chunk world, checking 180,000+ triangles across all five
+orientations.
+
+All four wall orderings were correct on the first run. Without the test that
+would have been luck rather than knowledge — and the one that was wrong would
+have been found in group F by staring at terrain and wondering why cliffs face
+one way.
+
+**Generalises:** where geometry is emitted by hand-written index order, check
+it by recomputing the geometry, not by reviewing the code.
