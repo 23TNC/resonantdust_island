@@ -1,0 +1,35 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
+[ext_resource type="Script" path="res://scripts/billboard_sprite_3d.gd" id="2_billboard"]
+[ext_resource type="Texture2D" path="res://assets/sprites/player.png" id="3_player"]
+[ext_resource type="Texture2D" path="res://assets/sprites/shadow.png" id="4_shadow"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
+radius = 0.3
+height = 1.4
+
+[node name="Player" type="CharacterBody3D"]
+collision_layer = 2
+collision_mask = 1
+floor_snap_length = 0.4
+script = ExtResource("1_player")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+shape = SubResource("CapsuleShape3D_player")
+
+[node name="Sprite" type="Sprite3D" parent="."]
+cast_shadow = 0
+texture = ExtResource("3_player")
+script = ExtResource("2_billboard")
+
+[node name="Shadow" type="Sprite3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.02, 0)
+cast_shadow = 0
+pixel_size = 0.011
+billboard = 0
+shaded = false
+double_sided = true
+render_priority = -1
+texture = ExtResource("4_shadow")

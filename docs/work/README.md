@@ -36,7 +36,8 @@ unit of work if it still matters.
 | Unit | Status |
 |---|---|
 | `0001-hello-world-entrypoint` | complete — Rust/wasm/worker/wgpu verified on a real GPU |
-| `0002-tile-world-generation`  | planned |
+| `0002-tile-world-generation`  | in progress — groups A–F done, G remains |
+| `0003-godot-proof-of-concept` | complete — same visual target in Godot, for comparison (branch `godot-poc`) |
 
 ## Status vocabulary
 

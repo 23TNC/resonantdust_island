@@ -15,3 +15,10 @@ web/src/generated/
 .idea/
 .vscode/
 *.swp
+
+# Godot — engine-managed import cache and shader cache
+godot/.godot/
+# Screenshots from `scripts/godot.sh shot`; the committed reference shots live
+# in docs/work/0003-godot-proof-of-concept/.
+godot/shots/*.png
+godot/android/
